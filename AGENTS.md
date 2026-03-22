@@ -55,8 +55,8 @@ DEVELOPMENT_TEAM=Y9TRXFZMR5 CODE_SIGN_IDENTITY="Apple Development" INSTALL_TO_AP
 
 | Key | Value | Location |
 |-----|-------|----------|
-| `MARKETING_VERSION` | 1.0.4 | `Project.swift` |
-| `CURRENT_PROJECT_VERSION` | 5 | `Project.swift` |
+| `MARKETING_VERSION` | 1.0.5 | `Project.swift` |
+| `CURRENT_PROJECT_VERSION` | 6 | `Project.swift` |
 | Team ID | `Y9TRXFZMR5` | `Project.swift` |
 
 ## CI/CD
