@@ -1,0 +1,45 @@
+name: CI
+
+# GitHub Actions macOS 러너에 Xcode 26.3 (Swift 6.2)이 추가되면 활성화
+# on:
+#   push:
+#     branches: [main]
+#   pull_request:
+#     branches: [main]
+on: workflow_dispatch
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Mise + Tuist
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          brew install mise
+          eval "$(mise activate bash)"
+          mise install
+          mise x tuist@4.162.1 -- tuist generate --no-open
+
+      - name: Build
+        run: |
+          xcodebuild \
+            -workspace AeroPulse.xcworkspace \
+            -scheme AeroPulse \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Test
+        run: |
+          xcodebuild \
+            -workspace AeroPulse.xcworkspace \
+            -scheme AeroPulseTests \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            test
