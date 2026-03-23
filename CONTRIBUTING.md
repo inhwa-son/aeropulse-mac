@@ -1,40 +1,83 @@
 # Contributing to AeroPulse
 
-## Quick Start
+Thanks for your interest in AeroPulse! This guide covers everything you need to get started.
+
+## Development Setup
+
+### Prerequisites
+
+| Tool | Version | Install |
+|------|---------|---------|
+| macOS | 15.0+ | — |
+| Xcode | 26.3+ | Mac App Store |
+| mise | latest | `brew install mise` |
+| Tuist | 4.162.1 | Managed by mise |
+
+### Clone and build
 
 ```bash
 git clone https://github.com/inhwa-son/aeropulse-mac.git
 cd aeropulse-mac
+mise install
 mise x tuist@4.162.1 -- tuist generate
 xcodebuild -workspace AeroPulse.xcworkspace -scheme AeroPulse -configuration Debug build
 ```
 
-## Requirements
+### Run tests
 
-- macOS 15.0+
-- Xcode 26.3+ (Swift 6.2)
-- [mise](https://mise.jdx.dev/) with Tuist 4.162.1
-
-## Development Rules
-
-All rules are enforced by architecture tests (`App/Tests/ArchitectureTests.swift`). Violations fail the build.
-
-- **Colors**: Use `APColor.*` tokens only. No `.red`, `.blue`, `.orange` etc.
-- **Localization**: All UI text via `String.tr("key")`. Add keys to both `en.lproj` and `ko.lproj`.
-- **Design Tokens**: New colors go in `DesignTokens.swift` with light/dark `isDark` branching.
-
-Run tests before submitting:
 ```bash
-xcodebuild -workspace AeroPulse.xcworkspace -scheme AeroPulse -configuration Debug CODE_SIGNING_ALLOWED=NO test
+xcodebuild -workspace AeroPulse.xcworkspace -scheme AeroPulse \
+  -configuration Debug CODE_SIGNING_ALLOWED=NO test
+```
+
+All code rules are enforced by architecture tests in `App/Tests/ArchitectureTests.swift`. Violations fail the build — no exceptions.
+
+## Code Rules
+
+| Rule | Requirement | Enforced by |
+|------|------------|-------------|
+| Colors | `APColor.*` tokens only — no `.red`, `.blue`, etc. | `noRawSystemColorsInFeatures` test |
+| Localization | `String.tr("key")` — add keys to both `en.lproj` and `ko.lproj` | `localizationKeysInSync` test |
+| Design Tokens | New colors in `DesignTokens.swift` with `isDark` branching | `designTokensAdaptive` test |
+| File Structure | Views in `Features/`, models in `Domain/`, services in `Infrastructure/` | `codePathsClaimed` test |
+| Card Styling | Use `.tintedCard()`, `.panelSection()`, `.cardStyle()` modifiers | Convention |
+
+## Project Structure
+
+```
+App/
+├── Sources/
+│   ├── App/            Entry point, AppDelegate
+│   ├── Features/       SwiftUI views and view models
+│   ├── Domain/         Models and business logic
+│   ├── Infrastructure/ Services, XPC clients, hardware access
+│   ├── Shared/         SMC bridge, protocols shared across targets
+│   ├── Daemon/         Privileged helper source
+│   └── Service/        XPC service source
+├── Resources/          Assets, localizations
+├── Support/            Entitlements, LaunchDaemon plists
+└── Tests/              Unit + architecture tests
 ```
 
 ## Pull Requests
 
-1. Fork and create a feature branch
-2. Make changes following the rules above
-3. Ensure all tests pass (59+ tests)
-4. Submit a PR with a clear description
+1. **Fork** the repo and create a feature branch from `main`
+2. Follow the code rules above
+3. Ensure **all tests pass** before submitting
+4. Write a clear PR title and description
+5. One focused change per PR — avoid mixing unrelated changes
+
+## Commit Messages
+
+Use clear, descriptive commit messages:
+
+```
+feat: add custom curve import/export
+fix: prevent fan speed spike on wake from sleep
+refactor: extract sensor polling into dedicated service
+docs: update Korean installation guide
+```
 
 ## Private API Disclaimer
 
-This project uses undocumented Apple IOKit APIs for temperature sensor reading and SMC fan control. These APIs are community-documented and used by similar open-source projects, but may change across macOS versions. See `HIDTemperatureService.swift` and `AeroPulseSMCBridge.c`.
+This project uses undocumented Apple IOKit APIs (`HIDTemperatureService.swift`) and community-documented AppleSMC interfaces (`AeroPulseSMCBridge.c`) for temperature sensor reading and fan control. These APIs may change across macOS versions. If you discover breakage on a new macOS version, please open an issue.
