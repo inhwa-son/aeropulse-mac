@@ -51,9 +51,16 @@ if [[ -z "$SIGNATURE" ]]; then
   fi
 fi
 
+FLAGS="$(printf '%s\n' "$CODESIGN_INFO" | awk -F= '/^CodeDirectory/{print $0}')"
+RUNTIME="no"
+if printf '%s\n' "$CODESIGN_INFO" | grep -q 'runtime'; then
+  RUNTIME="yes"
+fi
+
 print_line "Signature" "${SIGNATURE:-unknown}"
 print_line "Authority" "${AUTHORITY:-missing}"
 print_line "Team ID" "${TEAM_ID:-missing}"
+print_line "Hardened Runtime" "$RUNTIME"
 
 if [[ -f "$PLIST_PATH" ]]; then
   BUNDLE_PROGRAM="$(/usr/bin/plutil -extract BundleProgram raw -o - "$PLIST_PATH" 2>/dev/null || true)"

@@ -1,6 +1,6 @@
 name: Release
 
-# GitHub Actions macOS 러너에 Xcode 26.3 (Swift 6.2)이 추가되면 활성화
+# GitHub Actions macOS runner에 Xcode 26.3 (Swift 6.2)이 추가되면 활성화
 # on:
 #   push:
 #     tags:
@@ -13,7 +13,6 @@ permissions:
 env:
   APP_NAME: AeroPulse
   SCHEME: AeroPulse
-  BUNDLE_ID: com.dan.aeropulse
   HELPER_ID: com.dan.aeropulse.helperd2
   TEAM_ID: Y9TRXFZMR5
 
@@ -35,7 +34,9 @@ jobs:
           mise install
           mise x tuist@4.162.1 -- tuist generate --no-open
 
+      # ── Optional: Code signing (requires Developer ID certificate) ──
       - name: Import signing certificate
+        if: ${{ secrets.CERTIFICATES_P12 != '' }}
         env:
           CERTIFICATES_P12: ${{ secrets.CERTIFICATES_P12 }}
           CERTIFICATES_P12_PASSWORD: ${{ secrets.CERTIFICATES_P12_PASSWORD }}
@@ -43,45 +44,54 @@ jobs:
           KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
           KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
 
-          # Create temporary keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          # Import certificate
           echo "$CERTIFICATES_P12" | base64 --decode > $RUNNER_TEMP/certificate.p12
           security import $RUNNER_TEMP/certificate.p12 \
             -P "$CERTIFICATES_P12_PASSWORD" \
-            -A \
-            -t cert \
-            -f pkcs12 \
+            -A -t cert -f pkcs12 \
             -k "$KEYCHAIN_PATH"
 
-          # Allow codesign to access keychain
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
 
-      - name: Build Release
+      - name: Build release
         run: |
-          xcodebuild \
-            -workspace AeroPulse.xcworkspace \
-            -scheme $SCHEME \
-            -configuration Release \
-            -derivedDataPath .derived/release \
-            DEVELOPMENT_TEAM=$TEAM_ID \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER=
+          HAS_CERT=${{ secrets.CERTIFICATES_P12 != '' }}
+          BUILD_ARGS=(
+            -workspace AeroPulse.xcworkspace
+            -scheme $SCHEME
+            -configuration Release
+            -derivedDataPath .derived/release
+          )
+
+          if [[ "$HAS_CERT" == "true" ]]; then
+            BUILD_ARGS+=(
+              DEVELOPMENT_TEAM=$TEAM_ID
+              CODE_SIGN_STYLE=Manual
+              "CODE_SIGN_IDENTITY=Developer ID Application"
+              CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO
+              "OTHER_CODE_SIGN_FLAGS=--options runtime --timestamp"
+              PROVISIONING_PROFILE_SPECIFIER=
+            )
+          else
+            BUILD_ARGS+=(CODE_SIGNING_ALLOWED=NO)
+          fi
+
+          xcodebuild "${BUILD_ARGS[@]}"
 
       - name: Package app bundle
         run: |
           APP_SOURCE=".derived/release/Build/Products/Release/$APP_NAME.app"
+          APP_DEST="out/release/$APP_NAME.app"
           mkdir -p out/release
-          cp -R "$APP_SOURCE" "out/release/$APP_NAME.app"
+          cp -R "$APP_SOURCE" "$APP_DEST"
 
-          # Embed helper and rewrite LaunchDaemon plist
-          HELPER_PATH="out/release/$APP_NAME.app/Contents/Library/PrivilegedHelperTools/AeroPulsePrivilegedHelper"
-          PLIST_PATH="out/release/$APP_NAME.app/Contents/Library/LaunchDaemons/$HELPER_ID.plist"
+          # Rewrite LaunchDaemon plist
+          HELPER_PATH="$APP_DEST/Contents/Library/PrivilegedHelperTools/AeroPulsePrivilegedHelper"
+          PLIST_PATH="$APP_DEST/Contents/Library/LaunchDaemons/$HELPER_ID.plist"
 
           if [[ -f "$PLIST_PATH" ]]; then
             /usr/bin/python3 -c "
@@ -93,13 +103,33 @@ jobs:
           "
           fi
 
-          # Post-sign helper
+      # ── Optional: Sign + notarize (requires Developer ID) ──
+      - name: Sign app bundle
+        if: ${{ secrets.CERTIFICATES_P12 != '' }}
+        run: |
+          SIGN_ID="Developer ID Application"
+          APP_DEST="out/release/$APP_NAME.app"
+          HELPER_PATH="$APP_DEST/Contents/Library/PrivilegedHelperTools/AeroPulsePrivilegedHelper"
+          XPC_PATH="$APP_DEST/Contents/XPCServices/AeroPulseControlService.xpc"
+
+          # Sign inside-out: helper → XPC → app
           if [[ -f "$HELPER_PATH" ]]; then
-            /usr/bin/codesign --force --sign "Apple Distribution" \
-              --identifier "$HELPER_ID" --timestamp "$HELPER_PATH"
-            /usr/bin/codesign --force --sign "Apple Distribution" \
-              --timestamp "out/release/$APP_NAME.app"
+            /usr/bin/codesign --force --sign "$SIGN_ID" \
+              --identifier "$HELPER_ID" \
+              --options runtime \
+              --entitlements App/Support/AeroPulsePrivilegedHelper.entitlements \
+              --timestamp "$HELPER_PATH"
           fi
+
+          if [[ -d "$XPC_PATH" ]]; then
+            /usr/bin/codesign --force --sign "$SIGN_ID" \
+              --options runtime --timestamp "$XPC_PATH"
+          fi
+
+          /usr/bin/codesign --force --sign "$SIGN_ID" \
+            --options runtime \
+            --entitlements App/Support/AeroPulse.entitlements \
+            --timestamp "$APP_DEST"
 
       - name: Create DMG
         run: |
@@ -107,10 +137,10 @@ jobs:
           ./scripts/create-dmg.sh "out/release/$APP_NAME.app" out/release
 
       - name: Notarize DMG
+        if: ${{ secrets.APPLE_ID != '' && secrets.CERTIFICATES_P12 != '' }}
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        if: env.APPLE_ID != ''
         run: |
           DMG_PATH=$(ls out/release/*.dmg | head -1)
           xcrun notarytool submit "$DMG_PATH" \
@@ -120,7 +150,8 @@ jobs:
             --wait
           xcrun stapler staple "$DMG_PATH"
 
-      - name: Extract version info
+      # ── Release ──
+      - name: Extract version
         id: version
         run: |
           APP_PATH="out/release/$APP_NAME.app"
@@ -134,15 +165,40 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          BUILD="${{ steps.version.outputs.build }}"
           TAG="${GITHUB_REF_NAME}"
           DMG_PATH=$(ls out/release/*.dmg | head -1)
           DMG_NAME=$(basename "$DMG_PATH")
 
           gh release create "$TAG" \
             --title "AeroPulse $VERSION" \
-            --generate-notes \
+            --notes "$(cat <<'EOF'
+          ## Install
+
+          ### Homebrew (recommended)
+          ```bash
+          brew install inhwa-son/tap/aeropulse
+          ```
+
+          ### Manual
+          Download the `.dmg` below, open it, and drag AeroPulse to Applications.
+
+          > Manual downloads may trigger a Gatekeeper warning. Right-click → Open, or run:
+          > `xattr -cr /Applications/AeroPulse.app`
+
+          See [CHANGELOG.md](https://github.com/inhwa-son/aeropulse-mac/blob/main/CHANGELOG.md) for details.
+          EOF
+          )" \
             "$DMG_PATH#$DMG_NAME"
+
+      - name: Update Homebrew Cask
+        if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          chmod +x scripts/update-homebrew-cask.sh
+          ./scripts/update-homebrew-cask.sh \
+            "${{ steps.version.outputs.version }}" \
+            "$(ls out/release/*.dmg | head -1)"
 
       - name: Cleanup keychain
         if: always()

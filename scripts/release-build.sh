@@ -14,27 +14,52 @@ CODE_SIGN_STYLE="${CODE_SIGN_STYLE:-Automatic}"
 INSTALL_TO_APPLICATIONS="${INSTALL_TO_APPLICATIONS:-0}"
 OPEN_AFTER_BUILD="${OPEN_AFTER_BUILD:-0}"
 HELPER_IDENTIFIER="com.dan.aeropulse.helperd2"
+XPC_RELATIVE="Contents/XPCServices/AeroPulseControlService.xpc"
+APP_ENTITLEMENTS="$ROOT_DIR/App/Support/AeroPulse.entitlements"
+HELPER_ENTITLEMENTS="$ROOT_DIR/App/Support/AeroPulsePrivilegedHelper.entitlements"
 
 post_sign_app() {
   local app_path="$1"
   local helper_path="$app_path/$HELPER_RELATIVE"
+  local xpc_path="$app_path/$XPC_RELATIVE"
 
   [[ -n "$CODE_SIGN_IDENTITY" ]] || return 0
   [[ -e "$helper_path" ]] || return 0
 
-  echo "==> Post-signing helper payload"
+  # Determine timestamp flag: use secure timestamp for Developer ID, none for dev signing
+  local ts_flag="--timestamp"
+  if [[ "$CODE_SIGN_IDENTITY" == *"Development"* ]]; then
+    ts_flag="--timestamp=none"
+  fi
+
+  # Sign inside-out: helper → XPC → app
+  echo "==> Post-signing helper payload (hardened runtime)"
   /usr/bin/codesign \
     --force \
     --sign "$CODE_SIGN_IDENTITY" \
     --identifier "$HELPER_IDENTIFIER" \
-    --timestamp=none \
+    --options runtime \
+    --entitlements "$HELPER_ENTITLEMENTS" \
+    $ts_flag \
     "$helper_path"
 
-  echo "==> Re-signing app bundle"
+  if [[ -d "$xpc_path" ]]; then
+    echo "==> Post-signing XPC service (hardened runtime)"
+    /usr/bin/codesign \
+      --force \
+      --sign "$CODE_SIGN_IDENTITY" \
+      --options runtime \
+      $ts_flag \
+      "$xpc_path"
+  fi
+
+  echo "==> Re-signing app bundle (hardened runtime)"
   /usr/bin/codesign \
     --force \
     --sign "$CODE_SIGN_IDENTITY" \
-    --timestamp=none \
+    --options runtime \
+    --entitlements "$APP_ENTITLEMENTS" \
+    $ts_flag \
     "$app_path"
 }
 

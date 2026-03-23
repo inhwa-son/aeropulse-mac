@@ -31,6 +31,7 @@ let project = Project(
                 "App/Sources/Shared/SMC/AeroPulseSMCBridge.h",
                 "App/Sources/Shared/SMC/SMCRawFanReader.swift"
             ],
+            entitlements: .file(path: "App/Support/AeroPulsePrivilegedHelper.entitlements"),
             dependencies: [
                 .sdk(name: "IOKit", type: .framework)
             ],
@@ -89,6 +90,7 @@ let project = Project(
             ]),
             sources: ["App/Sources/App/**", "App/Sources/Domain/**", "App/Sources/Infrastructure/**", "App/Sources/Features/**", "App/Sources/Shared/**"],
             resources: ["App/Resources/**"],
+            entitlements: .file(path: "App/Support/AeroPulse.entitlements"),
             scripts: [
                 .post(
                     script: """
