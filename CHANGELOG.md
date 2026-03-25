@@ -4,6 +4,18 @@ All notable changes to AeroPulse will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.6] - 2026-03-25
+
+### Fixed
+- Switched the privileged helper LaunchDaemon to `BundleProgram` so helper registration survives app moves between paths and Macs
+- Removed absolute helper path rewriting from local release builds and GitHub release packaging
+- Tightened helper re-registration so stale launchd/BTM registrations are detected and surfaced instead of reported as healthy
+
+### Added
+- Helper diagnostics now report detected fan count and the registered helper program path
+- Release doctor now flags registration path mismatch and points users to the reset/reboot recovery path when macOS keeps stale background items
+- Architecture tests now guard against reintroducing absolute helper-path packaging in release scripts or workflows
+
 ## [1.0.5] - 2026-03-22
 
 ### Added
@@ -57,6 +69,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Manual fan speed control via AppleSMC
 - Privileged helper LaunchDaemon for root-level SMC access
 
+[1.0.6]: https://github.com/inhwa-son/aeropulse-mac/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/inhwa-son/aeropulse-mac/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/inhwa-son/aeropulse-mac/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/inhwa-son/aeropulse-mac/compare/v1.0.2...v1.0.3

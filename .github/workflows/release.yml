@@ -96,20 +96,6 @@ jobs:
           mkdir -p out/release
           cp -R "$APP_SOURCE" "$APP_DEST"
 
-          # Rewrite LaunchDaemon plist
-          HELPER_PATH="$APP_DEST/Contents/Library/PrivilegedHelperTools/AeroPulsePrivilegedHelper"
-          PLIST_PATH="$APP_DEST/Contents/Library/LaunchDaemons/$HELPER_ID.plist"
-
-          if [[ -f "$PLIST_PATH" ]]; then
-            /usr/bin/python3 -c "
-          import plistlib, sys
-          with open('$PLIST_PATH', 'rb') as f: data = plistlib.load(f)
-          data.pop('BundleProgram', None)
-          data['ProgramArguments'] = ['$HELPER_PATH']
-          with open('$PLIST_PATH', 'wb') as f: plistlib.dump(data, f, sort_keys=False)
-          "
-          fi
-
       # ── Optional: Sign + notarize (requires Developer ID) ──
       - name: Sign app bundle
         if: steps.signing.outputs.has_cert == 'true'

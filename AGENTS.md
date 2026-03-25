@@ -55,14 +55,14 @@ DEVELOPMENT_TEAM=Y9TRXFZMR5 CODE_SIGN_IDENTITY="Apple Development" INSTALL_TO_AP
 
 | Key | Value | Location |
 |-----|-------|----------|
-| `MARKETING_VERSION` | 1.0.5 | `Project.swift` |
-| `CURRENT_PROJECT_VERSION` | 6 | `Project.swift` |
+| `MARKETING_VERSION` | 1.0.6 | `Project.swift` |
+| `CURRENT_PROJECT_VERSION` | 7 | `Project.swift` |
 | Team ID | `Y9TRXFZMR5` | `Project.swift` |
 
 ## CI/CD
 
 - **CI**: `.github/workflows/ci.yml` — PR/push → 빌드 + 테스트 (아키텍처 테스트 포함)
-- **Release**: `.github/workflows/release.yml` — `v*` 태그 → 서명 + DMG + 공증 + GitHub Release
+- **Release**: `.github/workflows/release.yml` — 수동 실행(workflow_dispatch) → 서명 + DMG + 공증 + GitHub Release
 - **릴리즈**: `./scripts/bump-version.sh patch` → commit → `git tag v<version>` → push
 
 ## References

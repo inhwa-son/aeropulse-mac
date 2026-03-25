@@ -124,7 +124,7 @@ struct ArchitectureTests {
     }
 
     @Test func backendAccentCoverage() {
-        for s: FanWriteBackendState in [.booting, .privilegedDaemon, .awaitingApproval, .fallbackCLI(reason: nil), .unavailable] {
+        for s: FanWriteBackendState in [.booting, .privilegedDaemon, .awaitingApproval, .noFansDetected, .fallbackCLI(reason: nil), .unavailable] {
             let _ = APColor.backendAccent(for: s)
         }
     }
@@ -220,5 +220,33 @@ struct AgentsMDHardeningTests {
         #expect(agents.contains("APColor"), "AGENTS.md must reference APColor design token system")
         #expect(agents.contains("DesignTokens.swift"), "AGENTS.md must reference DesignTokens.swift")
         #expect(agents.contains("String.tr"), "AGENTS.md must reference String.tr localization")
+    }
+
+    @Test static func launchDaemonPlistUsesBundleProgramForRelocationSafety() {
+        let plist = TestRepo.read("App/Support/LaunchDaemons/com.dan.aeropulse.helperd2.plist")
+
+        #expect(plist.contains("<key>BundleProgram</key>"), "LaunchDaemon plist must use BundleProgram for app relocation safety")
+        #expect(
+            plist.contains("Contents/Library/PrivilegedHelperTools/AeroPulsePrivilegedHelper"),
+            "LaunchDaemon plist must reference the embedded helper via bundle-relative path"
+        )
+        #expect(!plist.contains("__AEROPULSE_HELPER_PATH__"), "LaunchDaemon plist must not depend on placeholder helper paths")
+        #expect(!plist.contains("<key>ProgramArguments</key>"), "LaunchDaemon plist must not bake helper paths into ProgramArguments")
+    }
+
+    @Test static func releaseBuildScriptDoesNotRewriteHelperPathToAbsoluteProgramArguments() {
+        let script = TestRepo.read("scripts/release-build.sh")
+
+        #expect(!script.contains("rewrite_launchd_program_arguments"), "release-build.sh must not rewrite helper paths after build")
+        #expect(!script.contains("data[\"ProgramArguments\"]"), "release-build.sh must not inject absolute ProgramArguments for the helper")
+        #expect(!script.contains("data.pop(\"BundleProgram\", None)"), "release-build.sh must preserve BundleProgram-based helper registration")
+    }
+
+    @Test static func releaseWorkflowDoesNotRewriteHelperPathToAbsoluteProgramArguments() {
+        let workflow = TestRepo.read(".github/workflows/release.yml")
+
+        #expect(!workflow.contains("data.pop('BundleProgram', None)"), "release.yml must preserve BundleProgram-based helper registration")
+        #expect(!workflow.contains("data['ProgramArguments']"), "release.yml must not inject absolute ProgramArguments for the helper")
+        #expect(!workflow.contains("Rewrite LaunchDaemon plist"), "release.yml must not rewrite LaunchDaemon helper paths after build")
     }
 }

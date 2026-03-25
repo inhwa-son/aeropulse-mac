@@ -142,6 +142,8 @@ enum APColor {
             return statusSuccess
         case .awaitingApproval:
             return statusWarning
+        case .noFansDetected:
+            return statusNeutral
         case .fallbackCLI:
             return statusWarning
         case .unavailable:

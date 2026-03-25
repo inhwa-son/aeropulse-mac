@@ -13,10 +13,7 @@ enum PrivilegedFanWriterError: LocalizedError {
 
 struct PrivilegedFanWriter: Sendable {
     func probe() throws {
-        let snapshots = try readFanPayloads()
-        guard !snapshots.isEmpty else {
-            throw PrivilegedFanWriterError.helperFailed("Failed to probe AppleSMC fan access.")
-        }
+        _ = try readFanPayloads()
     }
 
     func readFanPayloads() throws -> [PrivilegedFanSnapshotPayload] {

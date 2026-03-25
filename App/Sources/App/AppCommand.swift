@@ -38,14 +38,22 @@ enum AppCommandRunner {
             return 0
 
         case .helperRegister:
-            let status = (try? helperManager.register()) ?? .failed("register_failed")
+            var diagnostics = helperManager.diagnostics()
+            diagnostics.registeredProgramPath = await helperManager.loadRegisteredProgramPath()
+            let forceReregister = helperManager.status() != .notRegistered || diagnostics.hasRegistrationPathMismatch
+            var status = (try? await helperManager.registerForCurrentBundle(forceUnregister: forceReregister)) ?? .failed("register_failed")
+            diagnostics.registeredProgramPath = await helperManager.loadRegisteredProgramPath()
+            if status == .enabled, diagnostics.hasRegistrationPathMismatch {
+                status = .failed("stale_registration")
+            }
             write("""
             helper_register=\(statusName(status))
+            registered_program=\(diagnostics.registeredProgramPath ?? "unknown")
             """)
             return (status == .enabled || status == .requiresApproval) ? 0 : 1
 
         case .helperUnregister:
-            let status = (try? helperManager.unregister()) ?? .failed("unregister_failed")
+            let status = (try? await helperManager.unregisterAndWait()) ?? .failed("unregister_failed")
             write("""
             helper_unregister=\(statusName(status))
             """)
@@ -64,12 +72,17 @@ enum AppCommandRunner {
 
         case .helperDoctor:
             let status = helperManager.status()
-            let diagnostics = helperManager.diagnostics()
-            let notes = helperManager.preflightNotes()
+            var diagnostics = helperManager.diagnostics()
+            diagnostics.registeredProgramPath = await helperManager.loadRegisteredProgramPath()
+            var notes = helperManager.preflightNotes(for: diagnostics)
+            if diagnostics.hasRegistrationPathMismatch {
+                notes.append(String.tr("helper.guidance.registration_mismatch"))
+            }
             let guidance = notes.isEmpty ? "-" : notes.joined(separator: "\n- ")
 
             write("""
             helper_status=\(statusName(status))
+            registered_program=\(diagnostics.registeredProgramPath ?? "unknown")
             bundle_path=\(diagnostics.bundlePath)
             team_id=\(diagnostics.teamIdentifier ?? "missing")
             install_state=\(diagnostics.isInstalledInApplications ? "applications" : "external")

@@ -9,6 +9,11 @@ enum PrivilegedHelperConfiguration {
 
 @MainActor
 final class PrivilegedHelperManager {
+    private let commandRunner: CommandRunning
+
+    init(commandRunner: CommandRunning = ProcessCommandRunner()) {
+        self.commandRunner = commandRunner
+    }
 
     private var service: SMAppService? {
         guard #available(macOS 13.0, *) else {
@@ -87,6 +92,55 @@ final class PrivilegedHelperManager {
         }
     }
 
+    func unregisterAndWait() async throws -> PrivilegedHelperStatus {
+        guard #available(macOS 13.0, *) else {
+            return .unsupported
+        }
+
+        guard let service else {
+            return .notFound
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            service.unregister { [weak self] error in
+                Task { @MainActor in
+                    guard let self else {
+                        continuation.resume(returning: .notFound)
+                        return
+                    }
+
+                    let latestStatus = self.status()
+                    if let error, latestStatus != .notRegistered, latestStatus != .notFound {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+
+                    continuation.resume(returning: latestStatus)
+                }
+            }
+        }
+    }
+
+    func registerForCurrentBundle(forceUnregister: Bool = false) async throws -> PrivilegedHelperStatus {
+        let registeredProgramPath = await loadRegisteredProgramPath()
+        let shouldRepairMismatch = registeredProgramPath != nil && registeredProgramPath != expectedHelperProgramPath()
+        let shouldUnregisterFirst = forceUnregister || shouldRepairMismatch
+
+        if shouldUnregisterFirst {
+            _ = try? await unregisterAndWait()
+        } else {
+            let latestStatus = status()
+            switch latestStatus {
+            case .enabled, .requiresApproval:
+                return latestStatus
+            case .notRegistered, .notFound, .failed, .unsupported:
+                break
+            }
+        }
+
+        return try register()
+    }
+
     func preflightNotes() -> [String] {
         preflightNotes(for: diagnostics())
     }
@@ -144,6 +198,21 @@ final class PrivilegedHelperManager {
         }.value
     }
 
+    func loadRegisteredProgramPath() async -> String? {
+        let label = PrivilegedHelperConfiguration.machServiceName
+        let commandRunner = self.commandRunner
+
+        return await Task.detached(priority: .utility) {
+            let executable = URL(fileURLWithPath: "/bin/launchctl")
+            guard let result = try? await commandRunner.run(executable: executable, arguments: ["print", "system/\(label)"]) else {
+                return nil
+            }
+
+            let combinedOutput = result.stdout + "\n" + result.stderr
+            return Self.registeredProgramPath(from: combinedOutput)
+        }.value
+    }
+
     func openLoginItemsSettings() {
         guard #available(macOS 13.0, *) else {
             return
@@ -154,6 +223,12 @@ final class PrivilegedHelperManager {
 
     private func currentTeamIdentifier() -> String? {
         Self.currentTeamIdentifier(for: Bundle.main.bundleURL)
+    }
+
+    private func expectedHelperProgramPath() -> String {
+        Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Library/PrivilegedHelperTools/AeroPulsePrivilegedHelper")
+            .path
     }
 
     nonisolated private static func currentTeamIdentifier(for bundleURL: URL) -> String? {
@@ -171,5 +246,17 @@ final class PrivilegedHelperManager {
         }
 
         return signingInfo[kSecCodeInfoTeamIdentifier as String] as? String
+    }
+
+    nonisolated private static func registeredProgramPath(from output: String) -> String? {
+        output
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+            .first { $0.trimmingCharacters(in: .whitespaces).hasPrefix("program = ") }
+            .map { line in
+                line
+                    .trimmingCharacters(in: .whitespaces)
+                    .replacingOccurrences(of: "program = ", with: "")
+            }
     }
 }

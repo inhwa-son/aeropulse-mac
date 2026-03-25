@@ -63,29 +63,6 @@ post_sign_app() {
     "$app_path"
 }
 
-rewrite_launchd_program_arguments() {
-  local app_path="$1"
-  local plist_path="$app_path/$LAUNCHD_PLIST_RELATIVE"
-  local helper_path="$app_path/$HELPER_RELATIVE"
-
-  [[ -f "$plist_path" ]] || return 0
-
-  /usr/bin/python3 - "$plist_path" "$helper_path" <<'PY'
-import plistlib
-import sys
-
-plist_path, helper_path = sys.argv[1], sys.argv[2]
-with open(plist_path, "rb") as handle:
-    data = plistlib.load(handle)
-
-data.pop("BundleProgram", None)
-data["ProgramArguments"] = [helper_path]
-
-with open(plist_path, "wb") as handle:
-    plistlib.dump(data, handle, sort_keys=False)
-PY
-}
-
 mkdir -p "$OUTPUT_DIR"
 rm -rf "$DERIVED_DATA_DIR"
 
@@ -126,7 +103,6 @@ fi
 echo "==> Copying app bundle"
 rm -rf "$APP_OUTPUT"
 /bin/cp -R "$APP_SOURCE" "$APP_OUTPUT"
-rewrite_launchd_program_arguments "$APP_OUTPUT"
 post_sign_app "$APP_OUTPUT"
 
 echo "==> Running release doctor"
@@ -136,7 +112,6 @@ if [[ "$INSTALL_TO_APPLICATIONS" == "1" ]]; then
   echo "==> Installing into /Applications"
   /bin/rm -rf "/Applications/$APP_NAME"
   /bin/cp -R "$APP_OUTPUT" "/Applications/$APP_NAME"
-  rewrite_launchd_program_arguments "/Applications/$APP_NAME"
   post_sign_app "/Applications/$APP_NAME"
   "$ROOT_DIR/scripts/release-doctor.sh" "/Applications/$APP_NAME"
 fi

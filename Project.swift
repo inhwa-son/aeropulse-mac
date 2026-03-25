@@ -11,8 +11,8 @@ let project = Project(
             "SWIFT_VERSION": "6.2",
             "MACOSX_DEPLOYMENT_TARGET": "15.0",
             "ENABLE_USER_SCRIPT_SANDBOXING": "NO",
-            "CURRENT_PROJECT_VERSION": "6",
-            "MARKETING_VERSION": "1.0.5"
+            "CURRENT_PROJECT_VERSION": "7",
+            "MARKETING_VERSION": "1.0.6"
         ]
     ),
     targets: [
@@ -77,8 +77,8 @@ let project = Project(
             deploymentTargets: .macOS("15.0"),
             infoPlist: .extendingDefault(with: [
                 "CFBundleDisplayName": "AeroPulse",
-                "CFBundleShortVersionString": "1.0.5",
-                "CFBundleVersion": "6",
+                "CFBundleShortVersionString": "1.0.6",
+                "CFBundleVersion": "7",
                 "LSApplicationCategoryType": "public.app-category.utilities",
                 "NSPrincipalClass": "NSApplication",
                 "NSMainStoryboardFile": "",

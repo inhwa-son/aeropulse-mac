@@ -454,6 +454,7 @@ enum FanWriteBackendState: Equatable, Sendable {
     case booting
     case privilegedDaemon
     case awaitingApproval
+    case noFansDetected
     case fallbackCLI(reason: String?)
     case unavailable
 
@@ -465,6 +466,8 @@ enum FanWriteBackendState: Equatable, Sendable {
             "backend.privileged.title"
         case .awaitingApproval:
             "backend.awaiting_approval.title"
+        case .noFansDetected:
+            "backend.no_fans.title"
         case .fallbackCLI:
             "backend.fallback.title"
         case .unavailable:
@@ -480,6 +483,8 @@ enum FanWriteBackendState: Equatable, Sendable {
             "backend.privileged.detail"
         case .awaitingApproval:
             "backend.awaiting_approval.detail"
+        case .noFansDetected:
+            "backend.no_fans.detail"
         case .fallbackCLI:
             "backend.fallback.detail"
         case .unavailable:
@@ -560,17 +565,32 @@ struct PrivilegedHelperDiagnostics: Equatable, Sendable {
     var isInstalledInApplications: Bool
     var helperToolEmbedded: Bool
     var launchDaemonEmbedded: Bool
+    var registeredProgramPath: String? = nil
 
     static let empty = PrivilegedHelperDiagnostics(
         bundlePath: "",
         teamIdentifier: nil,
         isInstalledInApplications: false,
         helperToolEmbedded: false,
-        launchDaemonEmbedded: false
+        launchDaemonEmbedded: false,
+        registeredProgramPath: nil
     )
 
     var isReadyForReleaseRegistration: Bool {
         isInstalledInApplications && teamIdentifier != nil && helperToolEmbedded && launchDaemonEmbedded
+    }
+
+    var expectedHelperProgramPath: String {
+        guard !bundlePath.isEmpty else { return "" }
+        return bundlePath + "/Contents/Library/PrivilegedHelperTools/AeroPulsePrivilegedHelper"
+    }
+
+    var hasRegistrationPathMismatch: Bool {
+        guard let registeredProgramPath, !expectedHelperProgramPath.isEmpty else {
+            return false
+        }
+
+        return registeredProgramPath != expectedHelperProgramPath
     }
 }
 

@@ -66,11 +66,15 @@ if [[ -f "$PLIST_PATH" ]]; then
   BUNDLE_PROGRAM="$(/usr/bin/plutil -extract BundleProgram raw -o - "$PLIST_PATH" 2>/dev/null || true)"
   PROGRAM_ARGUMENTS="$(/usr/bin/plutil -extract ProgramArguments xml1 -o - "$PLIST_PATH" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' || true)"
   MACH_SERVICE="$(/usr/libexec/PlistBuddy -c 'Print :MachServices:com.dan.aeropulse.helperd2' "$PLIST_PATH" 2>/dev/null || true)"
+  PATH_MODE="missing"
   if [[ -n "$BUNDLE_PROGRAM" ]]; then
     print_line "BundleProgram" "$BUNDLE_PROGRAM"
-  else
+    PATH_MODE="bundle-relative"
+  elif [[ -n "$PROGRAM_ARGUMENTS" ]]; then
     print_line "ProgramArguments" "${PROGRAM_ARGUMENTS:-missing}"
+    PATH_MODE="absolute-path"
   fi
+  print_line "Launch Path Mode" "$PATH_MODE"
   print_line "Mach Service" "${MACH_SERVICE:-missing}"
 fi
 
@@ -82,6 +86,8 @@ elif [[ -z "${TEAM_ID:-}" ]]; then
   echo "- Produce a team-signed release build before registering the privileged helper."
 elif [[ ! -x "$HELPER_PATH" || ! -f "$PLIST_PATH" ]]; then
   echo "- Rebuild the app so the helper payload is embedded correctly."
+elif [[ -z "${BUNDLE_PROGRAM:-}" ]]; then
+  echo "- Rebuild the app. The LaunchDaemon uses an absolute helper path, so moving the app can break helper registration."
 else
   echo "- Register the helper from Settings and approve it in Login Items if macOS asks."
 fi

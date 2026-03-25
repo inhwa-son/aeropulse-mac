@@ -158,6 +158,43 @@ struct AeroPulseTests {
         #expect(AppSettings.default.iSMCExecutablePath.isEmpty)
     }
 
+    @Test
+    func noFansBackendUsesDedicatedLocalizationKeys() {
+        #expect(FanWriteBackendState.noFansDetected.titleKey == "backend.no_fans.title")
+        #expect(FanWriteBackendState.noFansDetected.detailKey == "backend.no_fans.detail")
+    }
+
+    @MainActor
+    @Test
+    func detectedFanCountLabelReflectsFanlessState() {
+        let model = AppModel(runner: StubCommandRunner(), hidService: nil)
+
+        #expect(model.detectedFanCountLabel == String.tr("settings.diag.unknown"))
+
+        model.detectedFanCount = 0
+        #expect(model.hasDetectedNoFans)
+        #expect(model.detectedFanCountLabel == String.tr("settings.diag.no_fans_detected"))
+
+        model.detectedFanCount = 2
+        #expect(model.hasDetectedNoFans == false)
+        #expect(model.detectedFanCountLabel == "2")
+    }
+
+    @Test
+    func privilegedHelperDiagnosticsDetectRegistrationPathMismatch() {
+        let diagnostics = PrivilegedHelperDiagnostics(
+            bundlePath: "/Applications/AeroPulse.app",
+            teamIdentifier: "Y9TRXFZMR5",
+            isInstalledInApplications: true,
+            helperToolEmbedded: true,
+            launchDaemonEmbedded: true,
+            registeredProgramPath: "/tmp/Old.app/Contents/Library/PrivilegedHelperTools/AeroPulsePrivilegedHelper"
+        )
+
+        #expect(diagnostics.hasRegistrationPathMismatch)
+        #expect(diagnostics.expectedHelperProgramPath == "/Applications/AeroPulse.app/Contents/Library/PrivilegedHelperTools/AeroPulsePrivilegedHelper")
+    }
+
     @MainActor
     @Test
     func helperChecklistShowsPendingApprovalWhenApprovalIsRequired() throws {
@@ -179,6 +216,45 @@ struct AeroPulseTests {
         #expect(install.state == .complete)
         #expect(payload.state == .complete)
         #expect(model.shouldShowHelperApprovalBanner)
+    }
+
+    @MainActor
+    @Test
+    func finalizeHelperRegistrationAttemptOnlyReportsRepairSuccessAfterMismatchClears() {
+        let model = AppModel(runner: StubCommandRunner(), hidService: nil)
+        model.privilegedHelperStatus = .enabled
+        model.privilegedHelperDiagnostics = PrivilegedHelperDiagnostics(
+            bundlePath: "/Applications/AeroPulse.app",
+            teamIdentifier: "Y9TRXFZMR5",
+            isInstalledInApplications: true,
+            helperToolEmbedded: true,
+            launchDaemonEmbedded: true
+        )
+
+        model.finalizeHelperRegistrationAttempt(wasRepairAttempt: true)
+
+        #expect(model.lastNoticeMessage == String.tr("settings.privileged_helper.repair_success"))
+        #expect(model.lastErrorMessage == nil)
+    }
+
+    @MainActor
+    @Test
+    func finalizeHelperRegistrationAttemptEscalatesWhenMismatchPersists() {
+        let model = AppModel(runner: StubCommandRunner(), hidService: nil)
+        model.privilegedHelperStatus = .enabled
+        model.privilegedHelperDiagnostics = PrivilegedHelperDiagnostics(
+            bundlePath: "/Applications/AeroPulse.app",
+            teamIdentifier: "Y9TRXFZMR5",
+            isInstalledInApplications: true,
+            helperToolEmbedded: true,
+            launchDaemonEmbedded: true,
+            registeredProgramPath: "/Users/test/Old.app/Contents/Library/PrivilegedHelperTools/AeroPulsePrivilegedHelper"
+        )
+
+        model.finalizeHelperRegistrationAttempt(wasRepairAttempt: true)
+
+        #expect(model.lastNoticeMessage == nil)
+        #expect(model.lastErrorMessage == String.tr("settings.privileged_helper.repair_reset_needed"))
     }
 
     @MainActor

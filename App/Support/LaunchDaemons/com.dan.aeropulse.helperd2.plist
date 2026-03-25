@@ -9,9 +9,7 @@
         <key>com.dan.aeropulse.helperd2</key>
         <true/>
     </dict>
-    <key>ProgramArguments</key>
-    <array>
-        <string>__AEROPULSE_HELPER_PATH__</string>
-    </array>
+    <key>BundleProgram</key>
+    <string>Contents/Library/PrivilegedHelperTools/AeroPulsePrivilegedHelper</string>
 </dict>
 </plist>

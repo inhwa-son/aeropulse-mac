@@ -122,6 +122,8 @@
 "settings.privileged_helper.copy_doctor" = "Copy Doctor Report";
 "settings.privileged_helper.install_already" = "This build is already running from /Applications.";
 "settings.privileged_helper.install_success" = "Copied the current build to /Applications. Relaunch the installed app for helper registration.";
+"settings.privileged_helper.repair_success" = "Re-registered the privileged helper for the current app bundle.";
+"settings.privileged_helper.repair_reset_needed" = "The helper still points at a different app path. Reset background items, reboot, then register again from the current /Applications build.";
 "settings.privileged_helper.relaunch_success" = "Relaunching the installed app from /Applications.";
 "settings.privileged_helper.doctor_refreshed" = "Release doctor report refreshed.";
 "settings.privileged_helper.diagnostics_copied" = "Helper diagnostics copied to the clipboard.";
@@ -129,6 +131,8 @@
 "profile.custom_suffix" = "Custom";
 "profile.custom_notice" = "This preset has been customized. Use Reset to restore the stock profile.";
 "settings.privileged_helper.doctor_step.install" = "Move or copy AeroPulse.app into /Applications, then relaunch that installed build.";
+"settings.privileged_helper.doctor_step.no_fans" = "This Mac reports no controllable fans, so AeroPulse can monitor sensors but cannot drive fan RPM.";
+"settings.privileged_helper.doctor_step.reregister" = "The helper is registered to a different app path. Unregister and register again from the current /Applications build. If the registered program stays on the old path, reset background items and reboot before trying again.";
 "settings.privileged_helper.doctor_step.sign" = "Create a team-signed build before registering the privileged helper.";
 "settings.privileged_helper.doctor_step.rebuild" = "Rebuild the app so the embedded helper payload is included correctly.";
 "settings.privileged_helper.doctor_step.login_items" = "Register the helper and approve it in Login Items if macOS asks.";
@@ -152,6 +156,8 @@
 "backend.privileged.detail" = "Using the standalone privileged helper daemon.";
 "backend.awaiting_approval.title" = "Awaiting Approval";
 "backend.awaiting_approval.detail" = "AeroPulse is installed correctly, but macOS approval is still required before helper fan writes can start.";
+"backend.no_fans.title" = "No Fans";
+"backend.no_fans.detail" = "This Mac does not expose controllable fan hardware to AeroPulse.";
 "backend.fallback.title" = "CLI Fallback";
 "backend.fallback.detail" = "Using the legacy CLI adapter.";
 "backend.unavailable.title" = "Unavailable";
@@ -183,6 +189,8 @@
 "helper.check.state.action" = "Needs Action";
 "helper.check.state.pending" = "Pending";
 "helper.guidance.install_applications" = "Place AeroPulse.app in /Applications before registering the privileged helper.";
+"helper.guidance.no_fans" = "This Mac reports no controllable fans, so privileged helper registration is optional.";
+"helper.guidance.registration_mismatch" = "macOS currently points the helper at a different app bundle. Unregister and register again from the current /Applications build. If the registered program still stays on the old path, reset background items and reboot.";
 "helper.guidance.signed_build" = "The current build has no team-signed identity. Use a properly signed build for LaunchDaemon registration.";
 "helper.guidance.missing_helper_tool" = "The embedded helper tool is missing from the app bundle. Rebuild before registering.";
 "helper.guidance.missing_launchd_plist" = "The embedded LaunchDaemon plist is missing from the app bundle. Rebuild before registering.";
@@ -206,6 +214,10 @@
 "settings.diag.unsigned" = "Unsigned";
 "settings.diag.install_state" = "Install State";
 "settings.diag.outside_applications" = "Outside /Applications";
+"settings.diag.detected_fans" = "Detected Fans";
+"settings.diag.registered_program" = "Registered Program";
+"settings.diag.unknown" = "Unknown";
+"settings.diag.no_fans_detected" = "No controllable fans";
 "settings.diag.helper_tool" = "Helper Tool";
 "settings.diag.embedded" = "Embedded";
 "settings.diag.missing" = "Missing";

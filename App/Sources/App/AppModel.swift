@@ -25,6 +25,7 @@ final class AppModel {
     var privilegedHelperGuidance: [String] = []
     var privilegedHelperDiagnostics: PrivilegedHelperDiagnostics = .empty
     var privilegedHelperDoctorReport: String = ""
+    var detectedFanCount: Int?
     var isRefreshing = false
     var isQuitBannerPresented = false
     var isPreparingToQuit = false
@@ -33,7 +34,7 @@ final class AppModel {
     var lastNoticeMessage: String?
 
     private let configStore: ConfigurationStore
-    private let privilegedHelperManager = PrivilegedHelperManager()
+    private let privilegedHelperManager: PrivilegedHelperManager
     private let privilegedFanControlClient = PrivilegedFanControlClient()
     private let fallbackFanCLI: FanCLIService
     private let smcFanReader = SMCFanReader()
@@ -51,12 +52,29 @@ final class AppModel {
         let threshold = max(30.0, settings.pollingInterval * 10.0)
         return elapsed >= threshold
     }
+
+    var hasDetectedNoFans: Bool {
+        detectedFanCount == 0
+    }
+
+    var detectedFanCountLabel: String {
+        guard let detectedFanCount else {
+            return String.tr("settings.diag.unknown")
+        }
+
+        if detectedFanCount == 0 {
+            return String.tr("settings.diag.no_fans_detected")
+        }
+
+        return String(detectedFanCount)
+    }
     private var lastFanRefreshAt: Date = .distantPast
     private var lastWriteBackendProbeAt: Date = .distantPast
     private var cachedDetailedSensors: [TemperatureSensor] = []
     private var xpcRetryAfter: Date = .distantPast
     private var settingsSaveTask: Task<Void, Never>?
     private var helperSigningInfoTask: Task<Void, Never>?
+    private var helperRegistrationInfoTask: Task<Void, Never>?
     private var helperAutoRecoveryTask: Task<Void, Never>?
     private var pendingForcedRefresh = false
     private(set) var hasLoadedSettings = false
@@ -89,6 +107,7 @@ final class AppModel {
         configStore: ConfigurationStore = ConfigurationStore()
     ) {
         self.configStore = configStore
+        privilegedHelperManager = PrivilegedHelperManager(commandRunner: runner)
         fallbackFanCLI = FanCLIService(runner: runner)
         iSMCReader = ISMCReader(runner: runner)
         self.hidService = hidService
@@ -113,8 +132,9 @@ final class AppModel {
         startRuntimeObserversIfNeeded()
         refreshPrivilegedHelperState()
         refreshPrivilegedHelperSigningInfo(force: true)
+        await refreshPrivilegedHelperRegistrationInfo(force: true)
         hasLoadedSettings = true
-        scheduleAutomaticHelperRecovery(force: true)
+        await refreshOnce(forceDetailed: true)
         startRefreshLoop()
     }
 
@@ -206,6 +226,11 @@ final class AppModel {
                 if nextFans != fans {
                     fans = nextFans
                 }
+                if detectedFanCount != nextFans.count {
+                    detectedFanCount = nextFans.count
+                    privilegedHelperGuidance = helperGuidance(for: privilegedHelperDiagnostics)
+                    privilegedHelperDoctorReport = makePrivilegedHelperDoctorReport()
+                }
                 lastFanRefreshAt = now
             }
 
@@ -217,7 +242,11 @@ final class AppModel {
 
             let sensorCatalogAvailable = !nextSensors.isEmpty
 
-            if privilegedHelperStatus.isReadyForWrites || fanCLIFallbackAvailable {
+            if hasDetectedNoFans {
+                integrationState = sensorCatalogAvailable ? .ready : .missingISMC
+                fanWriteBackendState = .noFansDetected
+                lastErrorMessage = nil
+            } else if privilegedHelperStatus.isReadyForWrites || fanCLIFallbackAvailable {
                 integrationState = sensorCatalogAvailable ? .ready : .missingISMC
                 await probeWriteBackendIfNeeded(
                     now: now,
@@ -470,9 +499,17 @@ final class AppModel {
     func registerPrivilegedHelper() async {
         do {
             settings.helperAutoRegistrationEnabled = true
-            privilegedHelperStatus = try privilegedHelperManager.register()
+            let shouldForceReregister =
+                privilegedHelperDiagnostics.hasRegistrationPathMismatch ||
+                privilegedHelperStatus != .notRegistered ||
+                fanWriteBackendState == .unavailable
+            privilegedHelperStatus = try await privilegedHelperManager.registerForCurrentBundle(
+                forceUnregister: shouldForceReregister
+            )
             refreshPrivilegedHelperState()
+            await refreshPrivilegedHelperRegistrationInfo(force: true)
             fanWriteBackendState = .booting
+            finalizeHelperRegistrationAttempt(wasRepairAttempt: shouldForceReregister)
             scheduleConfigurationSave()
             requestRefresh(forceDetailed: true)
         } catch {
@@ -485,8 +522,9 @@ final class AppModel {
     func unregisterPrivilegedHelper() async {
         do {
             settings.helperAutoRegistrationEnabled = false
-            privilegedHelperStatus = try privilegedHelperManager.unregister()
+            privilegedHelperStatus = try await privilegedHelperManager.unregisterAndWait()
             refreshPrivilegedHelperState()
+            await refreshPrivilegedHelperRegistrationInfo(force: true)
             fanWriteBackendState = .booting
             scheduleConfigurationSave()
             requestRefresh(forceDetailed: true)
@@ -689,7 +727,8 @@ final class AppModel {
         }
     }
 
-    func runPrivilegedHelperDoctor() {
+    func runPrivilegedHelperDoctor() async {
+        await refreshOnce(forceDetailed: true)
         refreshPrivilegedHelperState()
         privilegedHelperDoctorReport = makePrivilegedHelperDoctorReport()
         lastNoticeMessage = String.tr("settings.privileged_helper.doctor_refreshed")
@@ -704,6 +743,8 @@ final class AppModel {
         AeroPulse Helper Diagnostics
         Helper Status: \(helperStatus)
         Fan Backend: \(backendStatus)
+        Detected Fans: \(detectedFanCountLabel)
+        Registered Program: \(privilegedHelperDiagnostics.registeredProgramPath ?? String.tr("settings.diag.unknown"))
         Bundle Path: \(diagnostics.bundlePath)
         Team ID: \(diagnostics.teamIdentifier ?? "Unsigned")
         Install State: \(diagnostics.isInstalledInApplications ? "/Applications" : "Outside /Applications")
@@ -748,7 +789,7 @@ final class AppModel {
         let nextStatus = privilegedHelperManager.status()
         var nextDiagnostics = privilegedHelperManager.fastDiagnostics()
         nextDiagnostics.teamIdentifier = previousDiagnostics.teamIdentifier
-        let nextGuidance = privilegedHelperManager.preflightNotes(for: nextDiagnostics)
+        let nextGuidance = helperGuidance(for: nextDiagnostics)
 
         let didChange =
             nextStatus != privilegedHelperStatus ||
@@ -765,6 +806,12 @@ final class AppModel {
 
         if nextDiagnostics.teamIdentifier == nil || nextDiagnostics.bundlePath != previousDiagnostics.bundlePath {
             refreshPrivilegedHelperSigningInfo()
+        }
+
+        if nextDiagnostics.registeredProgramPath == nil || nextDiagnostics.bundlePath != previousDiagnostics.bundlePath {
+            Task { [weak self] in
+                await self?.refreshPrivilegedHelperRegistrationInfo()
+            }
         }
     }
 
@@ -785,15 +832,41 @@ final class AppModel {
 
             if privilegedHelperDiagnostics.teamIdentifier != teamIdentifier {
                 privilegedHelperDiagnostics.teamIdentifier = teamIdentifier
-                privilegedHelperGuidance = privilegedHelperManager.preflightNotes(for: privilegedHelperDiagnostics)
+                privilegedHelperGuidance = helperGuidance(for: privilegedHelperDiagnostics)
                 privilegedHelperDoctorReport = makePrivilegedHelperDoctorReport()
             }
         }
     }
 
+    private func refreshPrivilegedHelperRegistrationInfo(force: Bool = false) async {
+        if !force, helperRegistrationInfoTask != nil {
+            return
+        }
+
+        let expectedBundlePath = Bundle.main.bundleURL.path
+        helperRegistrationInfoTask?.cancel()
+        helperRegistrationInfoTask = Task { [weak self] in
+            guard let self else { return }
+            let programPath = await privilegedHelperManager.loadRegisteredProgramPath()
+            guard !Task.isCancelled else { return }
+            guard expectedBundlePath == privilegedHelperDiagnostics.bundlePath else { return }
+
+            helperRegistrationInfoTask = nil
+
+            if privilegedHelperDiagnostics.registeredProgramPath != programPath {
+                privilegedHelperDiagnostics.registeredProgramPath = programPath
+                privilegedHelperGuidance = helperGuidance(for: privilegedHelperDiagnostics)
+                privilegedHelperDoctorReport = makePrivilegedHelperDoctorReport()
+            }
+        }
+
+        await helperRegistrationInfoTask?.value
+    }
+
     private func scheduleAutomaticHelperRecovery(force: Bool = false) {
         guard currentAppCommand == nil else { return }
         guard settings.helperAutoRegistrationEnabled else { return }
+        guard !hasDetectedNoFans else { return }
         guard privilegedHelperDiagnostics.isReadyForReleaseRegistration else { return }
         guard privilegedHelperDiagnostics.isInstalledInApplications else { return }
 
@@ -804,6 +877,8 @@ final class AppModel {
         }
 
         switch privilegedHelperStatus {
+        case .enabled where privilegedHelperDiagnostics.hasRegistrationPathMismatch || fanWriteBackendState == .unavailable:
+            break
         case .notRegistered, .requiresApproval:
             break
         case .enabled, .notFound, .unsupported, .failed:
@@ -826,19 +901,43 @@ final class AppModel {
 
     private func attemptAutomaticHelperRegistration() async {
         guard settings.helperAutoRegistrationEnabled else { return }
+        let shouldForceReregister =
+            privilegedHelperDiagnostics.hasRegistrationPathMismatch ||
+            (privilegedHelperStatus.isReadyForWrites && fanWriteBackendState == .unavailable)
 
         do {
-            let registeredStatus = try privilegedHelperManager.register()
+            let registeredStatus = try await privilegedHelperManager.registerForCurrentBundle(
+                forceUnregister: shouldForceReregister
+            )
             privilegedHelperStatus = registeredStatus
             refreshPrivilegedHelperState()
+            await refreshPrivilegedHelperRegistrationInfo(force: true)
             fanWriteBackendState = .booting
 
-            if registeredStatus == .enabled {
-                lastNoticeMessage = String.tr("settings.privileged_helper.install_success")
-            }
+            finalizeHelperRegistrationAttempt(wasRepairAttempt: shouldForceReregister)
         } catch {
             privilegedHelperStatus = .failed(error.localizedDescription)
             refreshPrivilegedHelperState()
+        }
+    }
+
+    func finalizeHelperRegistrationAttempt(wasRepairAttempt: Bool) {
+        let repairResolved = !privilegedHelperDiagnostics.hasRegistrationPathMismatch
+
+        if wasRepairAttempt {
+            if privilegedHelperStatus == .enabled, repairResolved {
+                lastErrorMessage = nil
+                lastNoticeMessage = String.tr("settings.privileged_helper.repair_success")
+            } else if privilegedHelperDiagnostics.hasRegistrationPathMismatch {
+                lastNoticeMessage = nil
+                lastErrorMessage = String.tr("settings.privileged_helper.repair_reset_needed")
+            }
+            return
+        }
+
+        if privilegedHelperStatus == .enabled {
+            lastErrorMessage = nil
+            lastNoticeMessage = String.tr("settings.privileged_helper.install_success")
         }
     }
 
@@ -867,6 +966,8 @@ final class AppModel {
         AeroPulse Release Doctor
         Helper Status: \(String.tr(privilegedHelperStatus.titleKey))
         Fan Backend: \(String.tr(fanWriteBackendState.titleKey))
+        Detected Fans: \(detectedFanCountLabel)
+        Registered Program: \(diagnostics.registeredProgramPath ?? String.tr("settings.diag.unknown"))
         Bundle Path: \(diagnostics.bundlePath)
         Team ID: \(diagnostics.teamIdentifier ?? "Unsigned")
         Install State: \(diagnostics.isInstalledInApplications ? "/Applications" : "Outside /Applications")
@@ -883,6 +984,14 @@ final class AppModel {
     }
 
     private func suggestedReleaseStep(for diagnostics: PrivilegedHelperDiagnostics) -> String {
+        if hasDetectedNoFans {
+            return String.tr("settings.privileged_helper.doctor_step.no_fans")
+        }
+
+        if diagnostics.hasRegistrationPathMismatch {
+            return String.tr("settings.privileged_helper.doctor_step.reregister")
+        }
+
         if !diagnostics.isInstalledInApplications {
             return String.tr("settings.privileged_helper.doctor_step.install")
         }
@@ -896,6 +1005,20 @@ final class AppModel {
         }
 
         return String.tr("settings.privileged_helper.doctor_step.login_items")
+    }
+
+    private func helperGuidance(for diagnostics: PrivilegedHelperDiagnostics) -> [String] {
+        var notes = privilegedHelperManager.preflightNotes(for: diagnostics)
+
+        if hasDetectedNoFans {
+            notes.append(String.tr("helper.guidance.no_fans"))
+        }
+
+        if diagnostics.hasRegistrationPathMismatch {
+            notes.append(String.tr("helper.guidance.registration_mismatch"))
+        }
+
+        return notes
     }
 
     private func activeFanIDs() -> [Int] {
@@ -1196,7 +1319,7 @@ final class AppModel {
             return true
         case .fallbackCLI:
             return now >= retryAfter
-        case .awaitingApproval, .unavailable:
+        case .awaitingApproval, .noFansDetected, .unavailable:
             return false
         }
     }
@@ -1252,6 +1375,12 @@ final class AppModel {
         }
 
         lastWriteBackendProbeAt = now
+
+        if hasDetectedNoFans {
+            lastErrorMessage = nil
+            fanWriteBackendState = .noFansDetected
+            return
+        }
 
         if privilegedHelperStatus.isReadyForWrites {
             do {

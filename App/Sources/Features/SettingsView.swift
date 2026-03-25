@@ -183,7 +183,9 @@ struct SettingsView: View {
                     Spacer()
 
                     Button(String.tr("settings.privileged_helper.run_doctor")) {
-                        model.runPrivilegedHelperDoctor()
+                        Task {
+                            await model.runPrivilegedHelperDoctor()
+                        }
                     }
                 }
 
@@ -289,6 +291,10 @@ struct SettingsView: View {
             diagnosticRow(label: String.tr("settings.diag.team_id"), value: diag.teamIdentifier ?? String.tr("settings.diag.unsigned"), status: diag.teamIdentifier != nil ? .ok : .warn)
             Divider().opacity(0.3)
             diagnosticRow(label: String.tr("settings.diag.install_state"), value: diag.isInstalledInApplications ? "/Applications" : String.tr("settings.diag.outside_applications"), status: diag.isInstalledInApplications ? .ok : .warn)
+            Divider().opacity(0.3)
+            diagnosticRow(label: String.tr("settings.diag.detected_fans"), value: model.detectedFanCountLabel, status: model.hasDetectedNoFans ? .warn : .ok)
+            Divider().opacity(0.3)
+            diagnosticRow(label: String.tr("settings.diag.registered_program"), value: diag.registeredProgramPath ?? String.tr("settings.diag.unknown"), status: diag.hasRegistrationPathMismatch ? .warn : (diag.registeredProgramPath == nil ? .warn : .ok))
             Divider().opacity(0.3)
             diagnosticRow(label: String.tr("settings.diag.helper_tool"), value: diag.helperToolEmbedded ? String.tr("settings.diag.embedded") : String.tr("settings.diag.missing"), status: diag.helperToolEmbedded ? .ok : .error)
             Divider().opacity(0.3)

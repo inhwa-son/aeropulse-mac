@@ -24,6 +24,10 @@ if [[ ! -x "$APP_BINARY" ]]; then
 fi
 
 echo
+echo "==> Unregistering existing privileged helper (best effort)"
+"$APP_BINARY" --helper-unregister || true
+
+echo
 echo "==> Registering privileged helper"
 REGISTER_OUTPUT="$("$APP_BINARY" --helper-register || true)"
 printf '%s\n' "$REGISTER_OUTPUT"
