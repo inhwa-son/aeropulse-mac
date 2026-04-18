@@ -14,8 +14,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 BUMP_TYPE="${1:-patch}"
-DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:-Y9TRXFZMR5}"
-CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-Apple Distribution}"
+# Signing identity & team are optional — omit to produce an ad-hoc local build.
+# Provide DEVELOPMENT_TEAM + CODE_SIGN_IDENTITY only when a Developer ID
+# Application cert is available and notarization/Gatekeeper-passing DMGs are wanted.
+DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:-}"
+CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-}"
 
 echo "╔══════════════════════════════════════╗"
 echo "║     AeroPulse Release Pipeline       ║"

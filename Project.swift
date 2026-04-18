@@ -27,9 +27,13 @@ let project = Project(
                 "App/Sources/Daemon/**",
                 "App/Sources/Shared/PrivilegedFanControlProtocol.swift",
                 "App/Sources/Shared/PrivilegedFanSnapshotPayload.swift",
+                "App/Sources/Shared/PrivilegedHelperConstants.swift",
+                "App/Sources/Shared/ContinuationGate.swift",
                 "App/Sources/Shared/SMC/AeroPulseSMCBridge.c",
                 "App/Sources/Shared/SMC/AeroPulseSMCBridge.h",
-                "App/Sources/Shared/SMC/SMCRawFanReader.swift"
+                "App/Sources/Shared/SMC/SMCRawFanReader.swift",
+                "App/Sources/Shared/SMC/SMCKey.swift",
+                "App/Sources/Shared/SMC/SMCValue.swift"
             ],
             entitlements: .file(path: "App/Support/AeroPulsePrivilegedHelper.entitlements"),
             dependencies: [
@@ -84,8 +88,12 @@ let project = Project(
                 "NSMainStoryboardFile": "",
                 "NSSupportsAutomaticTermination": false,
                 "NSSupportsSuddenTermination": false,
+                // Designated requirement for the helper binary. Written in a
+                // form that works for both ad-hoc signed builds (paid Developer
+                // Program optional) and Developer-ID/Apple-Distribution signed
+                // builds — the runtime only needs the identifier to match.
                 "SMPrivilegedExecutables": [
-                    "com.dan.aeropulse.helperd2": "identifier \\\"com.dan.aeropulse.helperd2\\\" and anchor apple generic and certificate leaf[subject.OU] = \\\"Y9TRXFZMR5\\\""
+                    "com.dan.aeropulse.helperd2": "identifier \\\"com.dan.aeropulse.helperd2\\\""
                 ]
             ]),
             sources: ["App/Sources/App/**", "App/Sources/Domain/**", "App/Sources/Infrastructure/**", "App/Sources/Features/**", "App/Sources/Shared/**"],

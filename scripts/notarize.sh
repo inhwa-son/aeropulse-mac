@@ -13,7 +13,7 @@ if [[ -z "$INPUT_PATH" ]]; then
 fi
 
 APPLE_ID="${APPLE_ID:?Set APPLE_ID env var (your Apple ID email)}"
-APPLE_TEAM_ID="${APPLE_TEAM_ID:-Y9TRXFZMR5}"
+APPLE_TEAM_ID="${APPLE_TEAM_ID:?Set APPLE_TEAM_ID env var (required only when notarizing — paid Apple Developer Program membership needed)}"
 APPLE_APP_SPECIFIC_PASSWORD="${APPLE_APP_SPECIFIC_PASSWORD:?Set APPLE_APP_SPECIFIC_PASSWORD env var}"
 
 echo "==> Submitting for notarization: $INPUT_PATH"

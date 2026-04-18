@@ -48,4 +48,34 @@ int32_t AeroPulseSMCDumpFanModeKeys(
     uint32_t errorMessageCapacity
 );
 
+// Enumerate ALL SMC keys whose name starts with `prefix` (up to 4 chars).
+// Writes newline-separated `<key>: type=<type> size=<n> bytes=<hex> attrs=<0xNN>` entries.
+int32_t AeroPulseSMCEnumerateKeysWithPrefix(
+    const char *prefix,
+    char *output,
+    uint32_t outputCapacity,
+    char *errorMessage,
+    uint32_t errorMessageCapacity
+);
+
+// Raw 4-char key write.  data must point to `size` bytes; `type` is the SMC
+// 4-char type string (e.g., "ui8 ", "flt ", "si8 ").  Returns 0 on success.
+int32_t AeroPulseSMCWriteRawKey(
+    const char *key,
+    const char *type,
+    const uint8_t *data,
+    uint32_t size,
+    char *errorMessage,
+    uint32_t errorMessageCapacity
+);
+
+// Raw 4-char key read, outputs hex representation into output buffer.
+int32_t AeroPulseSMCReadRawKey(
+    const char *key,
+    char *output,
+    uint32_t outputCapacity,
+    char *errorMessage,
+    uint32_t errorMessageCapacity
+);
+
 #endif

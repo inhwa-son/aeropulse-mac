@@ -25,7 +25,7 @@
 - en/ko 로컬라이제이션 키 동기화 필수 → 불일치 시 테스트 실패.
 - 동적 컬러는 라이트/다크 분기 필수 → `isDark` 누락 시 테스트 실패.
 - 버전은 `Project.swift` 한 곳에서 관리 → 불일치 시 테스트 실패.
-- Team ID 3곳(Project.swift, AGENTS.md, release.yml) 일치 → 불일치 시 테스트 실패.
+- 유료 Apple Developer Program 의존 금지 — 헬퍼 XPC 검증은 번들 identifier 기반, `trustedTeamIdentifiers`는 선택. 위반 시 `paidDeveloperProgramIsOptional` 테스트 실패.
 
 ## Commands
 
@@ -33,9 +33,11 @@
 mise x tuist@4.162.1 -- tuist generate                    # 프로젝트 생성
 xcodebuild -workspace AeroPulse.xcworkspace -scheme AeroPulse -configuration Debug build
 xcodebuild -workspace AeroPulse.xcworkspace -scheme AeroPulse -configuration Debug CODE_SIGNING_ALLOWED=NO test
-DEVELOPMENT_TEAM=Y9TRXFZMR5 CODE_SIGN_IDENTITY="Apple Development" INSTALL_TO_APPLICATIONS=1 OPEN_AFTER_BUILD=1 ./scripts/release-build.sh
+INSTALL_TO_APPLICATIONS=1 OPEN_AFTER_BUILD=1 ./scripts/release-build.sh   # ad-hoc local build, no paid Apple Developer account needed
 ./scripts/bump-version.sh patch                            # 버전 범프 → commit → tag → push
 ```
+
+> 유료 Apple Developer Program 없이도 로컬 빌드·설치·팬 제어가 동작합니다. Developer ID Application 인증서가 있을 때만 `DEVELOPMENT_TEAM=... CODE_SIGN_IDENTITY="Developer ID Application: ..."`를 환경변수로 넘겨 공증 가능한 빌드를 생성합니다.
 
 ## Code Rules
 
@@ -46,6 +48,7 @@ DEVELOPMENT_TEAM=Y9TRXFZMR5 CODE_SIGN_IDENTITY="Apple Development" INSTALL_TO_AP
 | Design Token | `DesignTokens.swift`에 thermal/status/chart 전부 | `designTokensComplete` 테스트 |
 | Adaptive Color | 라이트/다크 isDark 분기 필수 | `designTokensAdaptive` 테스트 |
 | Version | `MARKETING_VERSION` = `CFBundleShortVersionString` | `versionConsistency` 테스트 |
+| Paid Developer Program | 선택(optional) — ad-hoc 서명으로 동작 | `paidDeveloperProgramIsOptional` 테스트 |
 | Independence | 기본 설정에 외부 앱 경로 없음 | `independentDefaults` 테스트 |
 | View | `Features/`, Model → `Domain/`, Service → `Infrastructure/` | `codePathsClaimed` 테스트 |
 | Card Style | `.tintedCard()`, `.panelSection()`, `.cardStyle()` | 문서 규칙 |
@@ -57,7 +60,7 @@ DEVELOPMENT_TEAM=Y9TRXFZMR5 CODE_SIGN_IDENTITY="Apple Development" INSTALL_TO_AP
 |-----|-------|----------|
 | `MARKETING_VERSION` | 1.0.6 | `Project.swift` |
 | `CURRENT_PROJECT_VERSION` | 7 | `Project.swift` |
-| Team ID | `Y9TRXFZMR5` | `Project.swift` |
+| Team ID | 선택 — 유료 가입자만 `DEVELOPMENT_TEAM` env로 주입 | — |
 
 ## CI/CD
 

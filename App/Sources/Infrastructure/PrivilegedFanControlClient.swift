@@ -23,7 +23,7 @@ actor PrivilegedFanControlClient {
     private let probeTimeoutSeconds = 3.5
     private let readTimeoutSeconds = 4.0
     private let writeTimeoutSeconds = 3.0
-    private let machServiceName = "com.dan.aeropulse.helperd2"
+    private let machServiceName = PrivilegedHelperConstants.machServiceName
     private var connection: NSXPCConnection?
 
     func probe() async throws {
@@ -87,6 +87,48 @@ actor PrivilegedFanControlClient {
             proxy.setManualRPM(fanIDsCSV: fanIDsCSV, rpm: NSNumber(value: rpm), withReply: reply)
         }
     }
+
+#if DEBUG
+    // Diagnostic raw-SMC XPC methods are only wired up in Debug so Release
+    // builds of the app cannot reach the writeRawKey/readRawKey surface even
+    // if the helper binary somehow shipped with those methods.
+    func writeRawKey(key: SMCKey, value: SMCValue) async throws {
+        try await requestVoid(timeoutSeconds: writeTimeoutSeconds) { proxy, reply in
+            proxy.writeRawKey(
+                key: key.rawString as NSString,
+                type: value.smcType.rawValue as NSString,
+                hexBytes: value.hexString as NSString,
+                withReply: reply
+            )
+        }
+    }
+
+    func readRawKey(key: SMCKey) async throws -> String {
+        let connection = activeConnection()
+        let connectionID = ObjectIdentifier(connection)
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+            let gate = ContinuationGate<String>(continuation)
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + readTimeoutSeconds) { [weak self] in
+                Self.handleTimeout(self, gate: gate, connectionID: connectionID, timeoutSeconds: self?.readTimeoutSeconds ?? 4.0)
+            }
+            let errorHandler: @Sendable (Error) -> Void = { [weak self] error in
+                Self.handleRemoteError(self, gate: gate, connectionID: connectionID, message: error.localizedDescription)
+            }
+            let proxy = connection.remoteObjectProxyWithErrorHandler(errorHandler) as? PrivilegedFanControlProtocol
+            guard let proxy else {
+                Self.handleUnavailableProxy(self, gate: gate, connectionID: connectionID)
+                return
+            }
+            proxy.readRawKey(key: key.rawString as NSString) { result, errorText in
+                if let errorText {
+                    gate.resume(throwing: PrivilegedFanControlClientError.remote(errorText))
+                } else {
+                    gate.resume(returning: (result as String?) ?? "")
+                }
+            }
+        }
+    }
+#endif
 
     private func requestVoid(
         timeoutSeconds: Double,
@@ -226,8 +268,13 @@ actor PrivilegedFanControlClient {
         connectionID: ObjectIdentifier,
         timeoutSeconds: Double
     ) {
-        scheduleDiscard(client, matching: connectionID)
-        gate.resume(throwing: PrivilegedFanControlClientError.timeout(timeoutSeconds))
+        // Only discard the connection if the gate wasn't already satisfied by an
+        // on-time reply. Otherwise we tear down a healthy XPC channel because a
+        // follow-up timeout fires after the reply already arrived.
+        let didFire = gate.tryResume(throwing: PrivilegedFanControlClientError.timeout(timeoutSeconds))
+        if didFire {
+            scheduleDiscard(client, matching: connectionID)
+        }
     }
 
     nonisolated private static func handleRemoteError(
@@ -255,8 +302,13 @@ actor PrivilegedFanControlClient {
         connectionID: ObjectIdentifier,
         timeoutSeconds: Double
     ) {
-        scheduleDiscard(client, matching: connectionID)
-        gate.resume(throwing: PrivilegedFanControlClientError.timeout(timeoutSeconds))
+        // Only discard the connection if the gate wasn't already satisfied by an
+        // on-time reply. Otherwise we tear down a healthy XPC channel because a
+        // follow-up timeout fires after the reply already arrived.
+        let didFire = gate.tryResume(throwing: PrivilegedFanControlClientError.timeout(timeoutSeconds))
+        if didFire {
+            scheduleDiscard(client, matching: connectionID)
+        }
     }
 
     nonisolated private static func handleRemoteError<T>(

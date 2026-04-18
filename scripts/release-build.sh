@@ -26,10 +26,12 @@ post_sign_app() {
   [[ -n "$CODE_SIGN_IDENTITY" ]] || return 0
   [[ -e "$helper_path" ]] || return 0
 
-  # Determine timestamp flag: use secure timestamp for Developer ID, none for dev signing
-  local ts_flag="--timestamp"
-  if [[ "$CODE_SIGN_IDENTITY" == *"Development"* ]]; then
-    ts_flag="--timestamp=none"
+  # Determine timestamp flag:
+  #  - Secure (online) timestamp for Developer ID production signing
+  #  - None for local Development, Apple Distribution, or ad-hoc ("-") signing
+  local ts_flag="--timestamp=none"
+  if [[ "$CODE_SIGN_IDENTITY" == *"Developer ID"* ]]; then
+    ts_flag="--timestamp"
   fi
 
   # Sign inside-out: helper → XPC → app
@@ -87,6 +89,14 @@ fi
 
 if [[ -n "$CODE_SIGN_IDENTITY" ]]; then
   build_args+=("CODE_SIGN_IDENTITY=$CODE_SIGN_IDENTITY" "PROVISIONING_PROFILE_SPECIFIER=")
+fi
+
+# Ad-hoc signing path: if no identity was supplied, build unsigned and post-sign
+# the app + helper + XPC service with `-` so the binaries still carry a code
+# signature identifier (required for the helper's XPC client validation).
+if [[ -z "$CODE_SIGN_IDENTITY" && -z "$DEVELOPMENT_TEAM" ]]; then
+  build_args+=("CODE_SIGNING_ALLOWED=NO")
+  CODE_SIGN_IDENTITY="-"
 fi
 
 echo "==> Building AeroPulse Release"

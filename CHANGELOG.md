@@ -4,6 +4,28 @@ All notable changes to AeroPulse will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Apple Silicon M3/M4/M5 fan control** — helper runs a 500 ms re-assertion timer that keeps `F<i>Tg` pegged against the firmware's ~1.5 s reclaim, so manual RPM targets actually drive the motor on M5 Pro and later
+- **Ad-hoc signing path** — the project no longer requires a paid Apple Developer Program membership. Build scripts and CI transparently fall back to `codesign -s -` + manual `launchctl bootstrap` when no Developer ID cert is supplied
+- Strongly-typed SMC API: `SMCKey`, `SMCType`, `SMCValue`, and `SMCHex` replace the scattered `"F0md"` / `"flt "` / inline-hex magic strings across the C bridge, helper, and CLI
+- `PrivilegedHelperConstants` as the single source of truth for the helper Mach-service name, plist name, and reassert interval
+- `ContinuationGate.tryResume` / `hasResumed` so the XPC client can distinguish a late timeout from a lost reply (no more tearing down healthy XPC connections)
+- Architecture tests guarding the security invariants: diagnostic/raw-SMC symbols must be `#if DEBUG`-gated, reassert timer must clear targets before auto writes, silent failures must surface via `helperDebugLog`
+- `ContinuationGateTests` unit suite (race, hasResumed, double-resume) and `paidDeveloperProgramIsOptional` architecture test
+
+### Changed
+- Privileged helper XPC validation switched from a single hardcoded Team ID to an allow-list of bundle identifiers + an optional trusted-team allow-list
+- Reassert timer state reduced to the single `manualTargets: [Int: Int]` map; the redundant `manualFanIDs` set is gone
+- `setAuto` now clears the reassert state before issuing the SMC write so a pending tick cannot re-arm manual mode after auto lands
+
+### Security
+- Diagnostic CLI (`--fan-diag`, `--fan-experiment`, `--smc-*`) and the raw-SMC XPC methods (`writeRawKey` / `readRawKey`) are now compiled out of Release builds, eliminating a root-privileged arbitrary-SMC-write escalation surface
+
+### Fixed
+- `safeQuitRestoresAllFansToAutoViaFallbackCLI` test now creates its own executable stub instead of depending on `/tmp/fan` existing on the host
+
 ## [1.0.6] - 2026-03-25
 
 ### Fixed

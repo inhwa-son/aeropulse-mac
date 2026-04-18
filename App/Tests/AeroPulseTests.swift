@@ -184,7 +184,7 @@ struct AeroPulseTests {
     func privilegedHelperDiagnosticsDetectRegistrationPathMismatch() {
         let diagnostics = PrivilegedHelperDiagnostics(
             bundlePath: "/Applications/AeroPulse.app",
-            teamIdentifier: "Y9TRXFZMR5",
+            teamIdentifier: "TESTTEAMID0",
             isInstalledInApplications: true,
             helperToolEmbedded: true,
             launchDaemonEmbedded: true,
@@ -201,7 +201,7 @@ struct AeroPulseTests {
         let model = AppModel(runner: StubCommandRunner(), hidService: nil)
         model.privilegedHelperDiagnostics = PrivilegedHelperDiagnostics(
             bundlePath: "/Applications/AeroPulse.app",
-            teamIdentifier: "Y9TRXFZMR5",
+            teamIdentifier: "TESTTEAMID0",
             isInstalledInApplications: true,
             helperToolEmbedded: true,
             launchDaemonEmbedded: true
@@ -225,7 +225,7 @@ struct AeroPulseTests {
         model.privilegedHelperStatus = .enabled
         model.privilegedHelperDiagnostics = PrivilegedHelperDiagnostics(
             bundlePath: "/Applications/AeroPulse.app",
-            teamIdentifier: "Y9TRXFZMR5",
+            teamIdentifier: "TESTTEAMID0",
             isInstalledInApplications: true,
             helperToolEmbedded: true,
             launchDaemonEmbedded: true
@@ -244,7 +244,7 @@ struct AeroPulseTests {
         model.privilegedHelperStatus = .enabled
         model.privilegedHelperDiagnostics = PrivilegedHelperDiagnostics(
             bundlePath: "/Applications/AeroPulse.app",
-            teamIdentifier: "Y9TRXFZMR5",
+            teamIdentifier: "TESTTEAMID0",
             isInstalledInApplications: true,
             helperToolEmbedded: true,
             launchDaemonEmbedded: true,
@@ -274,11 +274,20 @@ struct AeroPulseTests {
 
     @Test
     @MainActor
-    func safeQuitRestoresAllFansToAutoViaFallbackCLI() async {
+    func safeQuitRestoresAllFansToAutoViaFallbackCLI() async throws {
         let runner = RecordingCommandRunner()
         let model = AppModel(runner: runner, hidService: nil)
 
-        model.settings.fanExecutablePath = "/tmp/fan"
+        // Create a real executable stub for the duration of the test so the
+        // code's `FileManager.isExecutableFile(atPath:)` gate in
+        // `AppModel.resolvedExecutablePath` picks it up regardless of host state.
+        let fanStub = FileManager.default.temporaryDirectory
+            .appendingPathComponent("aeropulse-fan-\(UUID().uuidString)")
+        try "#!/bin/sh\nexit 0\n".write(to: fanStub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fanStub.path)
+        defer { try? FileManager.default.removeItem(at: fanStub) }
+
+        model.settings.fanExecutablePath = fanStub.path
         model.settings.automationEnabled = true
         model.privilegedHelperStatus = .requiresApproval
         model.fans = [

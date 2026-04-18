@@ -14,7 +14,9 @@ env:
   APP_NAME: AeroPulse
   SCHEME: AeroPulse
   HELPER_ID: com.dan.aeropulse.helperd2
-  TEAM_ID: Y9TRXFZMR5
+  # Team ID is supplied by a GitHub Actions secret only when signing with a
+  # Developer ID Application cert. Ad-hoc / unsigned builds run without it.
+  TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
 jobs:
   build-and-release:

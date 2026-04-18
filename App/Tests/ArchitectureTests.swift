@@ -204,10 +204,73 @@ struct AgentsMDHardeningTests {
         }
     }
 
-    @Test static func teamIDConsistent() {
-        for (file, label) in [("Project.swift","Project"),("AGENTS.md","AGENTS"),(".github/workflows/release.yml","CI")] {
-            #expect(TestRepo.count("Y9TRXFZMR5", in: TestRepo.read(file)) > 0, "Team ID missing in \(label)")
+    @Test static func paidDeveloperProgramIsOptional() {
+        // The project intentionally supports ad-hoc signed local builds so a paid
+        // Apple Developer Program membership is never required. The sources must
+        // not hardcode a team identifier in a way that forces paid-only signing.
+        let helper = TestRepo.read("App/Sources/Daemon/PrivilegedHelperMain.swift")
+        #expect(helper.contains("allowedClientIdentifiers"), "helper must validate by bundle identifier, not hardcoded team ID")
+        #expect(helper.contains("trustedTeamIdentifiers"), "helper must expose an optional team-id allowlist, not a required one")
+        #expect(!helper.contains("let allowedTeamID ="), "helper must not hardcode a single required team ID")
+    }
+
+    @Test static func diagnosticCLIIsGatedByDebug() {
+        // The diagnostic / raw-SMC commands grant root-level SMC access through
+        // the privileged helper's XPC. They must compile out of Release builds
+        // so an untrusted process that matches the client identifier allow-list
+        // still has no path to arbitrary SMC writes.
+        let commands = TestRepo.read("App/Sources/App/AppCommand.swift")
+        let protocolSource = TestRepo.read("App/Sources/Shared/PrivilegedFanControlProtocol.swift")
+        let client = TestRepo.read("App/Sources/Infrastructure/PrivilegedFanControlClient.swift")
+        let service = TestRepo.read("App/Sources/Daemon/PrivilegedFanControlService.swift")
+
+        for (source, label) in [(commands, "AppCommand"), (protocolSource, "Protocol"), (client, "Client"), (service, "Service")] {
+            let hasRawKey = source.contains("writeRawKey") || source.contains("readRawKey")
+                || source.contains("fanExperiment") || source.contains("smcEnumerate")
+                || source.contains("smcReadRaw") || source.contains("smcWriteRaw")
+                || source.contains("smcReadHelper") || source.contains("smcWriteHelper")
+            if hasRawKey {
+                #expect(source.contains("#if DEBUG"), "\(label) exposes diagnostic/raw-SMC symbols that must be gated by #if DEBUG")
+            }
         }
+    }
+
+    @Test static func reassertTimerCancelsWhenAllFansGoAuto() {
+        // Regression guard for the setAuto-vs-reassert race: the service must
+        // clear its desired-state map BEFORE issuing the SMC auto write so a
+        // pending reassert tick cannot re-arm manual mode for the just-cleared
+        // fans. Grep enforces the ordering.
+        let service = TestRepo.read("App/Sources/Daemon/PrivilegedFanControlService.swift")
+        guard let setAutoRange = service.range(of: "func setAuto("),
+              let nextFunc = service.range(of: "\n    func ", range: setAutoRange.upperBound..<service.endIndex) else {
+            Issue.record("unable to locate setAuto body")
+            return
+        }
+        let body = service[setAutoRange.lowerBound..<nextFunc.lowerBound]
+        guard let clearIdx = body.range(of: "manualTargets.removeValue"),
+              let writeIdx = body.range(of: "writer.setAuto") else {
+            Issue.record("setAuto must clear manualTargets and call writer.setAuto")
+            return
+        }
+        #expect(clearIdx.lowerBound < writeIdx.lowerBound,
+                "setAuto must remove manualTargets entries before issuing the SMC write")
+        #expect(body.contains("stopReassertTimer"),
+                "setAuto must stop the reassert timer when no manual targets remain")
+    }
+
+    @Test static func reassertTickLogsOnSMCFailures() {
+        // If firmware or another SMC writer rejects a reassert, the tick must
+        // log so a quiet "fans drifted back to auto" regression is observable
+        // in production via the helper debug log.
+        let service = TestRepo.read("App/Sources/Daemon/PrivilegedFanControlService.swift")
+        guard let tickRange = service.range(of: "private func reassertTick"),
+              let nextFunc = service.range(of: "\n    private func ", range: tickRange.upperBound..<service.endIndex) else {
+            Issue.record("unable to locate reassertTick body")
+            return
+        }
+        let body = service[tickRange.lowerBound..<nextFunc.lowerBound]
+        #expect(body.contains("helperDebugLog"),
+                "reassertTick must log SMC write failures rather than swallowing them silently")
     }
 
     @Test static func ciRunsTests() {

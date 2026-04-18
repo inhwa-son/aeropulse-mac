@@ -14,6 +14,7 @@
 
 enum {
     AEROPULSE_SMC_SUCCESS = 0,
+    AEROPULSE_SMC_GET_KEY_BY_INDEX = 8,
     AEROPULSE_SMC_GET_KEY_INFO = 9,
     AEROPULSE_SMC_READ_KEY = 5,
     AEROPULSE_SMC_WRITE_KEY = 6,
@@ -657,4 +658,151 @@ int32_t AeroPulseSMCDumpFanModeKeys(
 
     IOServiceClose(connection);
     return (int32_t)KERN_SUCCESS;
+}
+
+static void aeroPulseSMCUInt32ToKey(uint32_t value, char key[5])
+{
+    key[0] = (char)((value >> 24) & 0xFF);
+    key[1] = (char)((value >> 16) & 0xFF);
+    key[2] = (char)((value >> 8) & 0xFF);
+    key[3] = (char)(value & 0xFF);
+    key[4] = '\0';
+}
+
+int32_t AeroPulseSMCEnumerateKeysWithPrefix(
+    const char *prefix,
+    char *output,
+    uint32_t outputCapacity,
+    char *errorMessage,
+    uint32_t errorMessageCapacity
+)
+{
+    if (output == NULL || outputCapacity == 0 || prefix == NULL) {
+        aeroPulseSMCWriteError(errorMessage, errorMessageCapacity, "Invalid enumerate arguments.");
+        return (int32_t)kIOReturnBadArgument;
+    }
+    output[0] = '\0';
+    if (errorMessage != NULL && errorMessageCapacity > 0) errorMessage[0] = '\0';
+
+    io_connect_t connection = IO_OBJECT_NULL;
+    kern_return_t status = aeroPulseSMCOpen(&connection);
+    if (status != KERN_SUCCESS) {
+        aeroPulseSMCWriteKernelError(errorMessage, errorMessageCapacity, "Failed to open AppleSMC", status);
+        return (int32_t)status;
+    }
+
+    uint32_t keyCount = 0;
+    if (!aeroPulseSMCReadUInt(connection, "#KEY", &keyCount, errorMessage, errorMessageCapacity)) {
+        IOServiceClose(connection);
+        return (int32_t)kIOReturnError;
+    }
+
+    size_t prefixLen = strlen(prefix);
+    if (prefixLen > 4) prefixLen = 4;
+
+    uint32_t offset = 0;
+    for (uint32_t index = 0; index < keyCount; index++) {
+        AeroPulseSMCParamStruct in, out;
+        memset(&in, 0, sizeof(in));
+        memset(&out, 0, sizeof(out));
+        in.data8 = AEROPULSE_SMC_GET_KEY_BY_INDEX;
+        in.data32 = index;
+        if (aeroPulseSMCCall(connection, &in, &out) != KERN_SUCCESS) continue;
+        if (out.result != AEROPULSE_SMC_SUCCESS) continue;
+
+        char keyStr[5];
+        aeroPulseSMCUInt32ToKey(out.key, keyStr);
+        if (prefixLen > 0 && strncmp(keyStr, prefix, prefixLen) != 0) continue;
+
+        uint8_t bytes[32];
+        uint32_t dataSize = 0;
+        char dataType[5] = {0};
+        kern_return_t rs = aeroPulseSMCReadKey(connection, keyStr, bytes, &dataSize, dataType);
+        if (rs != KERN_SUCCESS) continue;
+
+        char hex[128] = {0};
+        uint32_t hexOff = 0;
+        uint32_t bytesToShow = dataSize < 16 ? dataSize : 16;
+        for (uint32_t b = 0; b < bytesToShow && hexOff < sizeof(hex) - 3; b++) {
+            hexOff += (uint32_t)snprintf(hex + hexOff, sizeof(hex) - hexOff, "%02x ", bytes[b]);
+        }
+
+        int written = snprintf(
+            output + offset,
+            outputCapacity - offset,
+            "%s: type=%-4s size=%u bytes=%s\n",
+            keyStr, dataType, dataSize, hex
+        );
+        if (written <= 0) break;
+        offset += (uint32_t)written;
+        if (offset >= outputCapacity - 1) break;
+    }
+
+    IOServiceClose(connection);
+    return (int32_t)KERN_SUCCESS;
+}
+
+int32_t AeroPulseSMCWriteRawKey(
+    const char *key,
+    const char *type,
+    const uint8_t *data,
+    uint32_t size,
+    char *errorMessage,
+    uint32_t errorMessageCapacity
+)
+{
+    if (key == NULL || type == NULL || data == NULL || size == 0 || size > 32) {
+        aeroPulseSMCWriteError(errorMessage, errorMessageCapacity, "Invalid raw write args.");
+        return (int32_t)kIOReturnBadArgument;
+    }
+
+    io_connect_t connection = IO_OBJECT_NULL;
+    kern_return_t status = aeroPulseSMCOpen(&connection);
+    if (status != KERN_SUCCESS) {
+        aeroPulseSMCWriteKernelError(errorMessage, errorMessageCapacity, "Failed to open AppleSMC", status);
+        return (int32_t)status;
+    }
+
+    status = aeroPulseSMCWriteKey(connection, key, data, size, type, errorMessage, errorMessageCapacity);
+    IOServiceClose(connection);
+    return (int32_t)status;
+}
+
+int32_t AeroPulseSMCReadRawKey(
+    const char *key,
+    char *output,
+    uint32_t outputCapacity,
+    char *errorMessage,
+    uint32_t errorMessageCapacity
+)
+{
+    if (key == NULL || output == NULL || outputCapacity == 0) {
+        aeroPulseSMCWriteError(errorMessage, errorMessageCapacity, "Invalid raw read args.");
+        return (int32_t)kIOReturnBadArgument;
+    }
+    output[0] = '\0';
+
+    io_connect_t connection = IO_OBJECT_NULL;
+    kern_return_t status = aeroPulseSMCOpen(&connection);
+    if (status != KERN_SUCCESS) {
+        aeroPulseSMCWriteKernelError(errorMessage, errorMessageCapacity, "Failed to open AppleSMC", status);
+        return (int32_t)status;
+    }
+
+    uint8_t bytes[32];
+    uint32_t dataSize = 0;
+    char dataType[5] = {0};
+    status = aeroPulseSMCReadKey(connection, key, bytes, &dataSize, dataType);
+    IOServiceClose(connection);
+    if (status != KERN_SUCCESS) {
+        aeroPulseSMCWriteKernelError(errorMessage, errorMessageCapacity, "Read failed", status);
+        return (int32_t)status;
+    }
+
+    uint32_t offset = (uint32_t)snprintf(output, outputCapacity, "%s: type=%s size=%u bytes=", key, dataType, dataSize);
+    uint32_t show = dataSize < 16 ? dataSize : 16;
+    for (uint32_t b = 0; b < show && offset < outputCapacity - 3; b++) {
+        offset += (uint32_t)snprintf(output + offset, outputCapacity - offset, "%02x ", bytes[b]);
+    }
+    return 0;
 }

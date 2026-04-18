@@ -8,19 +8,40 @@ final class ContinuationGate<T: Sendable>: @unchecked Sendable {
         self.continuation = continuation
     }
 
-    func resume(returning value: T) {
+    /// Returns true if the continuation was already resumed before this call arrived.
+    /// Used by timeout handlers to avoid discarding a healthy XPC connection when
+    /// the reply already arrived on time.
+    var hasResumed: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return continuation == nil
+    }
+
+    /// Resumes only if not yet resumed. Returns true if this call actually resumed.
+    @discardableResult
+    func tryResume(returning value: T) -> Bool {
         lock.lock()
         let c = continuation
         continuation = nil
         lock.unlock()
         c?.resume(returning: value)
+        return c != nil
     }
 
-    func resume(throwing error: any Error) {
+    @discardableResult
+    func tryResume(throwing error: any Error) -> Bool {
         lock.lock()
         let c = continuation
         continuation = nil
         lock.unlock()
         c?.resume(throwing: error)
+        return c != nil
+    }
+
+    func resume(returning value: T) {
+        _ = tryResume(returning: value)
+    }
+
+    func resume(throwing error: any Error) {
+        _ = tryResume(throwing: error)
     }
 }

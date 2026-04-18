@@ -5,15 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_PATH="${APP_PATH:-/Applications/AeroPulse.app}"
 OPEN_LOGIN_ITEMS_ON_APPROVAL="${OPEN_LOGIN_ITEMS_ON_APPROVAL:-0}"
 
-if [[ -z "${DEVELOPMENT_TEAM:-}" ]]; then
-  echo "DEVELOPMENT_TEAM is required." >&2
-  exit 1
-fi
-
-if [[ -z "${CODE_SIGN_IDENTITY:-}" ]]; then
-  echo "CODE_SIGN_IDENTITY is required." >&2
-  exit 1
-fi
+: "${DEVELOPMENT_TEAM:=}"
+: "${CODE_SIGN_IDENTITY:=}"
 
 INSTALL_TO_APPLICATIONS=1 "$ROOT_DIR/scripts/release-build.sh"
 

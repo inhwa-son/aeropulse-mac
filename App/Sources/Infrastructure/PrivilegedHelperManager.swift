@@ -3,8 +3,8 @@ import Security
 import ServiceManagement
 
 enum PrivilegedHelperConfiguration {
-    static let plistName = "com.dan.aeropulse.helperd2.plist"
-    static let machServiceName = "com.dan.aeropulse.helperd2"
+    static let plistName = PrivilegedHelperConstants.launchDaemonPlistName
+    static let machServiceName = PrivilegedHelperConstants.machServiceName
 }
 
 @MainActor
@@ -38,12 +38,25 @@ final class PrivilegedHelperManager {
         case .requiresApproval:
             return .requiresApproval
         case .notRegistered:
-            return .notRegistered
+            return Self.isManuallyInstalledInSystemDomain() ? .enabled : .notRegistered
         case .notFound:
-            return .notFound
+            return Self.isManuallyInstalledInSystemDomain() ? .enabled : .notFound
         @unknown default:
             return .failed("Unknown SMAppService status.")
         }
+    }
+
+    /// Detects a helper registered directly into `/Library/LaunchDaemons/` via `launchctl bootstrap`.
+    /// Used as a fallback when SMAppService rejects the bundle (e.g., Gatekeeper rejects an
+    /// App-Store-signed build on a local Mac that has no Developer ID cert available).
+    /// Skipped in the test harness so unit tests that assign `privilegedHelperStatus` directly
+    /// aren't silently overridden by developer-machine state.
+    nonisolated static func isManuallyInstalledInSystemDomain() -> Bool {
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return false }
+        if ProcessInfo.processInfo.environment["SWIFT_TESTING_ENABLED"] != nil { return false }
+        if Bundle.main.bundleURL.path.contains("/DerivedData/") { return false }
+        let systemPlist = "/Library/LaunchDaemons/\(PrivilegedHelperConfiguration.plistName)"
+        return FileManager.default.fileExists(atPath: systemPlist)
     }
 
     func register() throws -> PrivilegedHelperStatus {

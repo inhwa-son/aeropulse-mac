@@ -81,13 +81,35 @@ xcodebuild -workspace AeroPulse.xcworkspace -scheme AeroPulse \
 
 ### Release build
 
+No Apple Developer Program membership required. Omit the signing env vars to produce an ad-hoc signed local build:
+
 ```bash
-DEVELOPMENT_TEAM=YOUR_TEAM_ID \
-CODE_SIGN_IDENTITY="Apple Development" \
 INSTALL_TO_APPLICATIONS=1 \
 OPEN_AFTER_BUILD=1 \
 ./scripts/release-build.sh
 ```
+
+If you **do** have a Developer ID Application cert (for distribution / notarization), pass it in:
+
+```bash
+DEVELOPMENT_TEAM=YOUR_TEAM_ID \
+CODE_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+INSTALL_TO_APPLICATIONS=1 \
+OPEN_AFTER_BUILD=1 \
+./scripts/release-build.sh
+```
+
+### Privileged helper install
+
+The helper binary ships inside the app bundle and is registered as a `LaunchDaemon` via `SMAppService` on first use. On a Developer ID build, macOS's Login Items approval flow handles registration automatically. For ad-hoc local builds (no cert), install manually once:
+
+```bash
+sudo cp /Applications/AeroPulse.app/Contents/Library/LaunchDaemons/com.dan.aeropulse.helperd2.plist /Library/LaunchDaemons/
+sudo launchctl enable system/com.dan.aeropulse.helperd2
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.dan.aeropulse.helperd2.plist
+```
+
+The LaunchDaemon persists across reboots. To uninstall: `sudo launchctl bootout system/com.dan.aeropulse.helperd2 && sudo rm /Library/LaunchDaemons/com.dan.aeropulse.helperd2.plist`.
 
 ## Architecture
 

@@ -1,15 +1,24 @@
 import Foundation
 import Security
 
-private let privilegedHelperMachServiceName = "com.dan.aeropulse.helperd2"
-private let allowedTeamID = "Y9TRXFZMR5"
+// Accepted client bundle identifiers. The app itself and Xcode previews / CLI
+// sub-processes of the same bundle are all legitimate clients.
+private let allowedClientIdentifiers: Set<String> = [
+    "com.dan.aeropulse",
+    PrivilegedHelperConstants.machServiceName
+]
+// Optional allow-list for team identifiers. If a client is signed with a
+// trusted Developer team, we accept it even without a bundle-identifier match.
+// Empty when the author is not enrolled in the paid Developer Program and the
+// build is ad-hoc signed. Not required for the helper to function.
+private let trustedTeamIdentifiers: Set<String> = []
 
 final class PrivilegedFanControlListenerDelegate: NSObject, NSXPCListenerDelegate {
-    private let listener = NSXPCListener(machServiceName: privilegedHelperMachServiceName)
+    private let listener = NSXPCListener(machServiceName: PrivilegedHelperConstants.machServiceName)
     private let stateLock = NSLock()
     private var idleTerminationWorkItem: DispatchWorkItem?
     private var activeConnectionCount = 0
-    private let idleGraceSeconds = 20.0
+    private let idleGraceSeconds = PrivilegedHelperConstants.idleTerminationGraceSeconds
 
     func run() {
         helperDebugLog("listener starting")
@@ -19,12 +28,15 @@ final class PrivilegedFanControlListenerDelegate: NSObject, NSXPCListenerDelegat
         RunLoop.current.run()
     }
 
-    /// Validate that the connecting process is signed by our team.
-    /// Uses the connection's PID to look up the code signature,
-    /// then checks the team identifier matches `allowedTeamID`.
-    /// Falls back to UID validation if code signing check is inconclusive.
+    /// Validates the connecting process's code signature.
+    ///
+    /// The helper ships without requiring a paid Apple Developer Program
+    /// subscription. To support ad-hoc signed local builds we authenticate
+    /// by the client's code-signing **identifier** (bundle ID), which every
+    /// codesign invocation produces — ad-hoc or Developer ID alike. If an
+    /// optional team identifier is configured, a match on that is also
+    /// sufficient for acceptance.
     private func validateConnection(_ connection: NSXPCConnection) -> Bool {
-        // Layer 1: Code signature validation via PID
         let pid = connection.processIdentifier
         let attributes = [kSecGuestAttributePid: pid] as CFDictionary
 
@@ -40,24 +52,28 @@ final class PrivilegedFanControlListenerDelegate: NSObject, NSXPCListenerDelegat
                 let infoStatus = SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &infoOpt)
 
                 if infoStatus == errSecSuccess, let info = infoOpt as? [String: Any] {
-                    if let teamID = info[kSecCodeInfoTeamIdentifier as String] as? String {
-                        if teamID == allowedTeamID {
-                            helperDebugLog("connection validated: team ID \(teamID) matches")
-                            return true
-                        } else {
-                            helperDebugLog("connection REJECTED: team ID \(teamID) does not match \(allowedTeamID)")
-                            return false
-                        }
-                    } else {
-                        helperDebugLog("connection: no team identifier in code signature, falling back to UID check")
+                    let teamID = info[kSecCodeInfoTeamIdentifier as String] as? String
+                    let identifier = info[kSecCodeInfoIdentifier as String] as? String
+
+                    if let teamID, trustedTeamIdentifiers.contains(teamID) {
+                        helperDebugLog("connection accepted via trusted team ID \(teamID)")
+                        return true
                     }
+                    if let identifier, allowedClientIdentifiers.contains(identifier) {
+                        helperDebugLog("connection accepted via signing identifier \(identifier)")
+                        return true
+                    }
+                    helperDebugLog("connection REJECTED: signing identifier=\(identifier ?? "nil"), team=\(teamID ?? "nil"); neither allowlisted")
+                    return false
                 }
             }
         } else {
             helperDebugLog("SecCodeCopyGuestWithAttributes failed: \(copyStatus)")
         }
 
-        // Layer 2: Fallback — restrict to same effective user
+        // Fallback: accept peers that run as the helper's same effective user.
+        // In practice this only covers rare edge cases where the guest lookup
+        // fails; the typical path is the bundle-identifier match above.
         let peerUID = connection.effectiveUserIdentifier
         let myUID = getuid()
         if peerUID == myUID {
@@ -65,7 +81,7 @@ final class PrivilegedFanControlListenerDelegate: NSObject, NSXPCListenerDelegat
             return true
         }
 
-        helperDebugLog("connection REJECTED: UID \(peerUID) != \(myUID) and code signing unavailable")
+        helperDebugLog("connection REJECTED: code signing unavailable and peer UID \(peerUID) != \(myUID)")
         return false
     }
 
