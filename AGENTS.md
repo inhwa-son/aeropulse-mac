@@ -58,8 +58,8 @@ INSTALL_TO_APPLICATIONS=1 OPEN_AFTER_BUILD=1 ./scripts/release-build.sh   # ad-h
 
 | Key | Value | Location |
 |-----|-------|----------|
-| `MARKETING_VERSION` | 1.0.6 | `Project.swift` |
-| `CURRENT_PROJECT_VERSION` | 7 | `Project.swift` |
+| `MARKETING_VERSION` | 1.1.0 | `Project.swift` |
+| `CURRENT_PROJECT_VERSION` | 8 | `Project.swift` |
 | Team ID | 선택 — 유료 가입자만 `DEVELOPMENT_TEAM` env로 주입 | — |
 
 ## CI/CD

@@ -4,7 +4,7 @@ All notable changes to AeroPulse will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.1.0] - 2026-04-19
 
 ### Added
 - **Apple Silicon M3/M4/M5 fan control** — helper runs a 500 ms re-assertion timer that keeps `F<i>Tg` pegged against the firmware's ~1.5 s reclaim, so manual RPM targets actually drive the motor on M5 Pro and later
@@ -91,6 +91,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Manual fan speed control via AppleSMC
 - Privileged helper LaunchDaemon for root-level SMC access
 
+[1.1.0]: https://github.com/inhwa-son/aeropulse-mac/compare/v1.0.6...v1.1.0
 [1.0.6]: https://github.com/inhwa-son/aeropulse-mac/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/inhwa-son/aeropulse-mac/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/inhwa-son/aeropulse-mac/compare/v1.0.3...v1.0.4
