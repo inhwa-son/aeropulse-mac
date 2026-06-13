@@ -8,19 +8,23 @@ import Foundation
 import IOKit.hidsystem
 
 final class HIDTemperatureService: @unchecked Sendable {
-    @objc protocol IOHIDEvent: NSObjectProtocol {}
-
-    typealias CreateClientFn = @convention(c) (CFAllocator?) -> IOHIDEventSystemClient?
+    // These dlsym'd CF functions follow the Create/Copy ownership rule (they return a +1
+    // reference). They are typed to return Unmanaged so every result is balanced with
+    // takeRetainedValue(); returning the bridged object directly would leak the +1 on each
+    // call — over days of ~2s polling that grew into millions of leaked HID events/objects.
+    typealias CreateClientFn = @convention(c) (CFAllocator?) -> Unmanaged<IOHIDEventSystemClient>?
     typealias SetMatchingFn = @convention(c) (IOHIDEventSystemClient?, CFDictionary?) -> Void
-    typealias CopyEventFn = @convention(c) (IOHIDServiceClient?, Int64, Int32, Int64) -> IOHIDEvent?
-    typealias EventFloatFn = @convention(c) (IOHIDEvent?, UInt32) -> Double
-    typealias CopyPropertyFn = @convention(c) (IOHIDServiceClient?, CFString?) -> CFTypeRef?
+    typealias CopyEventFn = @convention(c) (IOHIDServiceClient?, Int64, Int32, Int64) -> Unmanaged<AnyObject>?
+    typealias EventFloatFn = @convention(c) (AnyObject?, UInt32) -> Double
+    typealias CopyPropertyFn = @convention(c) (IOHIDServiceClient?, CFString?) -> Unmanaged<CFTypeRef>?
 
-    private let createClient: CreateClientFn
-    private let setMatching: SetMatchingFn
     private let copyEvent: CopyEventFn
     private let eventFloatValue: EventFloatFn
     private let copyProperty: CopyPropertyFn
+
+    // Single HID event-system client, created once and reused for every poll.
+    // See init for why this must NOT be recreated per readSensors() call.
+    private let client: IOHIDEventSystemClient
 
     init?() {
         guard let handle = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW) else {
@@ -42,19 +46,25 @@ final class HIDTemperatureService: @unchecked Sendable {
             return nil
         }
 
-        createClient = _createClient
-        setMatching = _setMatching
         copyEvent = _copyEvent
         eventFloatValue = _eventFloatValue
         copyProperty = _copyProperty
+
+        // Create the IOHIDEventSystemClient exactly once and reuse it for every poll.
+        // Previously readSensors() created a fresh client on each call (polling runs ~every
+        // 2s) and never released it. Each client is a connection into the HID event system
+        // tracked by WindowServer/hidd; the leaked connections accumulated over days of
+        // uptime until, on display-sleep, WindowServer's teardown of the bloated connection
+        // table burned ~70% CPU for ~2 min and exhausted its dispatch-thread limit (512),
+        // triggering a 40s watchdog hang that killed WindowServer.
+        guard let sharedClient = _createClient(kCFAllocatorDefault)?.takeRetainedValue() else {
+            return nil
+        }
+        _setMatching(sharedClient, ["PrimaryUsage": 5, "PrimaryUsagePage": 65280] as CFDictionary)
+        client = sharedClient
     }
 
     func readSensors() -> [TemperatureSensor] {
-        guard let client = createClient(kCFAllocatorDefault) else {
-            return []
-        }
-
-        setMatching(client, ["PrimaryUsage": 5, "PrimaryUsagePage": 65280] as CFDictionary)
         guard let services = IOHIDEventSystemClientCopyServices(client) as? [IOHIDServiceClient] else {
             return []
         }
@@ -63,7 +73,7 @@ final class HIDTemperatureService: @unchecked Sendable {
 
         for service in services {
             let name = normalizedSensorName(serviceName(service) ?? "Sensor")
-            guard let event = copyEvent(service, 15, 0, 0) else {
+            guard let event = copyEvent(service, 15, 0, 0)?.takeRetainedValue() else {
                 continue
             }
 
@@ -96,11 +106,11 @@ final class HIDTemperatureService: @unchecked Sendable {
     }
 
     private func serviceName(_ service: IOHIDServiceClient) -> String? {
-        if let raw = copyProperty(service, "Product" as CFString) as? String, !raw.isEmpty {
+        if let raw = copyProperty(service, "Product" as CFString)?.takeRetainedValue() as? String, !raw.isEmpty {
             return raw
         }
 
-        guard let raw = copyProperty(service, "LocationID" as CFString) as? NSNumber else {
+        guard let raw = copyProperty(service, "LocationID" as CFString)?.takeRetainedValue() as? NSNumber else {
             return nil
         }
 
